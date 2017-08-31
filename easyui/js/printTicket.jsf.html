@@ -1,0 +1,471 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!-- saved from url=(0081)https://www.irctc.co.in/eticketing/printTicket.jsf?pnr=8151453972^B^22-Sep-2016^0 -->
+<html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+	                   <style>
+                  		 div.divTop TD {vertical-align:top;}
+                
+                    </style><script type="text/javascript" src="./printTicket.jsf_files/jquery.js.download"></script>
+	<script type="text/javascript" src="./printTicket.jsf_files/journeyplannerforms_header,scommon,cancellation,txnhistory,jquery.autocomplete,journeyplannerforms,common,cookie,validator,passengersinput,jquery_menu,megadropdown,tbislayout,trainbetweenstns,userSignUp.download"></script>
+	
+            <style type="text/css">
+
+.iframeBanners {
+display : block;
+}
+#watermark
+{
+ bottom:5px;
+ right:5px;
+ opacity:0.5;
+ /* z-index:999; */
+ /* z-index:25; */
+ /* background-image: url('resources/images/watermarklogo.jpg'); background-repeat: no-repeat; */
+ color:white;
+ z-index:331;
+ position:relative;
+}
+div.watermark
+{
+  /*  background-image: url('resources/images/watermarklogonew.gif'); */
+   background-position: center center; 
+   visibility: visible;
+     display: block;
+     z-index:auto;
+   position:absolute;
+  
+   /* display: none; opacity:0.9;*/
+}
+div.watermarkbox
+{
+  
+   background-color:white;
+   margin: 0;
+   opacity:0.8;
+    
+  
+   
+   /* display: none; opacity:0.9;*/
+}
+
+#new code for ERS image
+
+div.container
+{
+    height:400px;
+    width:400px;
+    position:relative;
+}
+
+div.image
+{    
+    position:absolute;
+    left:0;
+    top:0;
+}
+div.text
+{
+    z-index:500;
+    position:absolute;    
+    color:white;
+    font-size:24px;
+    font-weight:bold;
+    left:150px;
+    top:350px;
+}
+
+/* @media print
+{
+   
+	watermark{
+    visibility: visible;
+      display: block;
+    
+    }
+ } */
+  </style>        
+	<script type="text/javascript">
+	$(document).ready(function(){
+		$(".psgn-info").find("th,td").css("text-align","left").css("padding-left","5px");
+	});
+
+	function hide(target) {
+	    document.getElementById(target).style.display = 'none';
+	    document.getElementById("link1").style.display = 'none';
+	}
+	</script>
+	
+	<script type="text/javascript">
+/*<![CDATA[*/
+     
+     var doc = new jsPDF();
+     function savepdftest(){
+    	 doc.fromHTML($('#printdiv').html(), 15, 15, {
+    	        'width': 170,
+    	            'elementHandlers': specialElementHandlers
+    	    });
+
+         
+    	 doc.save('sample-file.pdf');
+         
+     }
+           
+     /*]]>*/
+    </script><link type="text/css" rel="stylesheet" href="./printTicket.jsf_files/skinning.css"><script type="text/javascript" src="./printTicket.jsf_files/jsf.js.jsf"></script><script type="text/javascript" src="./printTicket.jsf_files/packed.js.download"></script><link type="text/css" rel="stylesheet" href="./printTicket.jsf_files/packed.css"></head>
+<body onload="disableSelection(document.body);" onkeydown="return disableCtrlKeyCombination(event);" onkeypress="return disableCtrlKeyCombination(event);" style="cursor: default;">
+<form id="printTikt" name="printTikt" method="post" action="https://www.irctc.co.in/eticketing/printTicket.jsf" enctype="application/x-www-form-urlencoded">
+<input type="hidden" name="printTikt" value="printTikt">
+
+			
+			<table width="98%" align="center" cellpadding="0" cellspacing="0" border="1" id="abcwatermark" style="font-family: Arial; font-size: 9px; font-color: black; border-style: solid; border-width: 1px;">   
+				<tbody><tr>
+					<td>
+						<table width="100%" align="center">
+							<tbody><tr valign="top">
+								<td width="100%">
+									<table width="100%" align="center">
+										<tbody><tr align="center">
+											<td width="10%" align="left" rowspan="2"><img src="./printTicket.jsf_files/indianrailways-logo.jpg.jsf" height="40px"></td>
+											<td width="20%;" align="center" rowspan="2"><strong></strong>
+														<strong><span style="font-size:14px;"></span></strong>
+														</td>
+											<td width="40%" align="center"><u><strong><span style="font-family:Arial;font-size:11px;font-color:black;">IRCTCs e-Ticketing Service</span></strong></u>
+											</td>
+											<td width="20%;" align="center" rowspan="2"><strong></strong>
+														<strong><span style="font-size:14px;"></span></strong>
+														</td>
+											<td width="10%" align="right" rowspan="2"><img src="./printTicket.jsf_files/irctclogo.jpg.jsf" height="40px"></td>
+										</tr>
+										<tr align="center">
+											<td align="center"><u><strong><span style="font-family:Arial;font-size:11px;font-color:black;">Electronic Reservation Slip (Personal User)</span></strong></u>
+												<u><strong></strong></u>
+												<u><strong></strong></u>
+												<u><strong></strong></u>
+											</td>
+										</tr>
+									</tbody></table>
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<table>
+										<tbody><tr>
+											<td>
+												<div class="divTop">
+															
+				                                           <table>
+				                                           <tbody><tr><td>1.   This Ticket will be valid with an ID proof in original. Please carry original Identity Proof. If found traveling without original ID proof, Passenger will be treated as without ticket and charged as per extent Railway Rules.</td></tr>
+				                                           </tbody></table>
+															
+				                                           <table>
+				                                           <tbody><tr><td>2.   Valid IDs to be presented during train journey by one of the passenger booked  on an e-ticket :- Voter Identity Card / Passport / PAN Card / Driving License / Photo ID card issued by Central / State Govt / Public Sector Undertakings of State / Central Government ,District Administrations , Muncipal bodies and Panchayat Administrations which are having serial number / Student Identity Card with photograph issued by recognized School or College for their students / Nationalized Bank Passbook with photograph /Credit Cards issued by Banks with laminated photograph/Unique Identification Card "Aadhaar".</td></tr>
+				                                           </tbody></table>
+															
+				                                           <table>
+				                                           <tbody><tr><td>3.   General rules/ Information for e-ticket passenger have to be studied by the customer for cancellation &amp; refund.</td></tr>
+				                                           </tbody></table>
+												</div> 
+											</td>
+											<td><img src="./printTicket.jsf_files/QrCode"></td>
+										</tr>
+									</tbody></table>
+								</td>
+
+
+							</tr>
+							<tr>
+								<td>
+									<table width="100%" border="1" cellpadding="0" cellspacing="0" rules="all">
+
+
+										<tbody><tr>
+											<td width="25%" align="left">&nbsp;<strong>PNR No:</strong>&nbsp;8151453972</td>
+											<td width="25%" align="left">&nbsp;Train No. &amp; Name:&nbsp;22181/JBP  NZM SUP EXP</td>
+											<td width="25%" align="left">&nbsp;Quota:&nbsp;GENERAL (GN)</td>
+										</tr>
+
+
+
+										<tr>
+											<td width="25%" align="left">&nbsp;<strong>Transaction ID:&nbsp;</strong>100000607806525</td>
+											<td width="25%" align="left">&nbsp;Date &amp; Time Of Booking:&nbsp; 20-Sep-2016 00:57:51 HRS</td>
+											<td width="25%" align="left">&nbsp;Class:&nbsp;SLEEPER CLASS (SL)</td>
+										</tr>
+
+
+
+
+										<tr>
+											<td width="25%" align="left">&nbsp;From:JABALPUR(JBP)</td>
+											<td width="25%" align="left">&nbsp;Date Of Journey:22-Sep-2016</td>
+											<td width="25%" align="left">&nbsp;To:H NIZAMUDDIN(NZM)</td>
+										</tr>
+
+
+
+										<tr>
+											<td width="25%" align="left">&nbsp;Boarding At:JABALPUR(JBP)</td>
+											<td width="25%" align="left">&nbsp;Date Of Boarding:22-Sep-2016</td>
+											<td width="25%" align="left">&nbsp;Scheduled Departure:22-Sep-2016 15:00 *</td>
+										</tr>
+
+
+										<tr>
+											<td width="25%" align="left">&nbsp;Resv. Upto:H NIZAMUDDIN(NZM)</td>
+											<td width="25%" align="left">&nbsp;Scheduled Arrival:23-Sep-2016 05:15 *</td>
+											<td width="25%" align="left">&nbsp;Adult:2&nbsp;&nbsp;&nbsp;<strong>Child:</strong>0</td>
+										</tr>
+
+
+
+										<tr>
+											<td width="25%" align="left">&nbsp;Passenger Mobile No:7042128877</td>
+											<td width="25%" align="left">&nbsp;
+													 </td>	
+											<td width="25%" align="left">&nbsp;Distance:906 KM</td>
+										</tr> 
+										<tr>
+											<td width="25%" align="left" colspan="1">&nbsp;<strong>Passenger Address:</strong></td>
+											<td width="25%" align="left" colspan="3">&nbsp;gorakhpur~jabalpur, JABALPUR, MADHYA PRADESH - 482001</td>
+
+										</tr>
+										<tr>
+											
+											<td width="100%" align="left" colspan="3">&nbsp;<strong></strong><table border="0" rules="none" style="font-family:Arial;font-size:9px;font-color:black;" width="100%">
+<tbody>
+<tr><td></td></tr></tbody>
+</table>
+
+											</td>
+										</tr>
+									</tbody></table>
+								</td>
+							</tr>
+
+							<tr>
+								<td align="left"><strong><span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">FARE DETAILS :</span></strong></td>
+							</tr>
+							<tr>
+								<td><table border="1" cellpadding="0" cellspacing="0" style="font-family:Arial;font-size:9px;font-color:black;width:100%">
+<tbody>
+<tr>
+<td>
+												&nbsp;<span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">Ticket Fare **</span></td>
+<td><img src="./printTicket.jsf_files/indian-rupee-symbol24x18.png.jsf" height="10px"><span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">765.0</span></td>
+<td>
+												&nbsp;<span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">Rupees Seven Hundred and Sixty Five Only</span></td>
+</tr>
+<tr>
+<td>
+												&nbsp;<span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">IRCTC Service Charge (Incl. of Service Tax) #</span></td>
+<td><img src="./printTicket.jsf_files/indian-rupee-symbol24x18.png.jsf" height="10px"><span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">23.0</span></td>
+<td>
+												&nbsp;<span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">Rupees Twenty Three Only</span></td>
+</tr>
+<tr>
+<td>
+												&nbsp;<span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">Travel Insurance Premium (Incl. of Service Tax)</span></td>
+<td><img src="./printTicket.jsf_files/indian-rupee-symbol24x18.png.jsf" height="10px"><span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">1.84</span></td>
+<td>
+												&nbsp;<span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">Rupees One and  Eight Four Paisa Only</span></td>
+</tr>
+<tr>
+<td>
+												&nbsp;<span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">Total Fare (all inclusive)</span></td>
+<td><img src="./printTicket.jsf_files/indian-rupee-symbol24x18.png.jsf" height="10px"><span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">789.84</span></td>
+<td>
+												&nbsp;<span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">Rupees Seven Hundred and Eighty Nine and  Eight Four Paisa Only</span></td>
+</tr>
+</tbody>
+</table>
+</td>
+							</tr>
+
+							<tr>
+								<td align="left">&nbsp;&nbsp;
+										
+										</td>
+							</tr>
+
+							<tr>
+								<td align="left"># Service Charges per e-ticket irrespective of number of passengers on the ticket.	
+										</td>
+							</tr>
+							 <tr>
+           					 
+           					<td align="left"></td>
+         					</tr>
+							
+							<tr>
+								<td align="left"><strong></strong></td>
+							</tr>
+							<tr>
+								<td align="left"></td>
+							</tr>
+							<tr>
+								<td align="left"><strong></strong></td>
+							</tr>
+
+                            <tr>
+          <td align="left"><strong></strong></td>
+                              </tr>
+							<tr>
+								<td align="left"><strong><span style="font-size:9px;FONT-WEIGHT: bold;font-color:black;">PASSENGER DETAILS :</span></strong></td>
+							</tr>
+							<tr>
+								<td><table class="psgn-info" border="1" cellpadding="0" cellspacing="0" style="font-family:Arial;font-size:9px;font-color:black;" width="100%">
+<thead>
+<tr>
+<th scope="col">SNo.</th>
+<th scope="col">Name</th>
+<th scope="col"><span style="text-align:center;">Age</span></th>
+<th scope="col">Sex</th>
+<th scope="col">Concession</th>
+<th scope="col">Registration Number</th>
+<th scope="col">Booking Status</th>
+<th scope="col">Current Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+						&nbsp;1</td>
+<td>
+						&nbsp;AVTAR SINGH M</td>
+<td>
+						&nbsp;<span style="text-align:center;">60</span></td>
+<td>
+					  &nbsp;Male</td>
+<td>
+						&nbsp;SRCTZN</td>
+<td>
+						&nbsp;</td>
+<td>
+						&nbsp;CNF/S4/41/LOWER</td>
+<td>
+						&nbsp;CNF/S4/41/LOWER</td>
+</tr>
+<tr>
+<td>
+						&nbsp;2</td>
+<td>
+						&nbsp;GURMEET KAUR M</td>
+<td>
+						&nbsp;<span style="text-align:center;">55</span></td>
+<td>
+					  &nbsp;Female</td>
+<td>
+						&nbsp;</td>
+<td>
+						&nbsp;</td>
+<td>
+						&nbsp;CNF/S4/44/LOWER</td>
+<td>
+						&nbsp;CNF/S4/44/LOWER</td>
+</tr>
+</tbody>
+</table>
+</td>
+							</tr>
+							<tr>
+								<td align="left"><u><strong>This ticket is booked on a personal user ID and cannot be sold by an agent. If bought from an agent by any individual, it is at his/her own risk.</strong></u></td>
+							</tr>
+							<tr>
+								<td><u><strong></strong></u> <strong></strong> <strong></strong> <strong></strong></td>
+							</tr>
+							<tr>
+								<td><strong></strong></td>
+							</tr>
+							<tr>
+								<td></td>
+							</tr>
+							<tr>
+								<td></td>
+							</tr>
+							
+							<tr>
+								<td><strong>Ticket Printing Time: </strong>20-Sep-2016 01:01:26 HRS</td>
+							</tr>
+							<tr>
+						 		<td colspan="4" align="left"><span style="color:red;font:11px arial;">IR recovers only 57% of cost of travel on an average</span>
+						 		</td>
+						 	</tr>
+							 <tr>
+							<td>
+							<table width="100%"> 
+									<tbody><tr>
+										<td align="right">											
+											<a href="https://www.irctc.co.in/eticketing/printTicket.jsf?pnr=8151453972^B^22-Sep-2016^0#" onclick="hide(&#39;iframeBanners&#39;)" id="link1" class="link1">Print ERS Without Advertisements [X]</a>
+										</td>
+									</tr>
+									<tr>
+										<td align="center">
+											<div id="iframeBanners" class="iframeBanners">											
+												<iframe src="./printTicket.jsf_files/ers_banners.html" frameborder="0" scrolling="no" width="800" height="130">
+							  						&lt;p&gt;Your browser does not support iframes.&lt;/p&gt;
+												</iframe>
+											</div>
+										</td>
+								
+									</tr>
+								 </tbody></table>
+							</td>
+							</tr>
+							<tr>
+								<td><strong>IMPORTANT :</strong></td>
+							</tr>
+
+                            <tr>
+                            <td>
+                            </td>
+                            </tr>
+                             <tr>
+                            <td>
+                            </td>
+                            </tr>
+							<tr>
+								<td>
+									 <div class="divTop">
+											</div></td></tr><tr><td>1.   For details, rules and terms &amp; conditions of E-Ticketing services, please visit www.irctc.co.in.</td></tr>
+											<tr><td>2.   *New Time Table will be effective from 1-Oct-2016. Departure
+ time and Arrival Time printed on this ERS/VRM is liable to change. Please
+ Check correct departure, arrival from Railway Station Enquiry, Dial 139 or
+ SMS RAIL to 139.</td></tr>
+											<tr><td>3.   There are amendments in certain provision of Refund Rules. Refer Amended Refund Rules w.e.f 12-Nov-2015.(details available on www.irctc.co.in under heading Refund Rule--&gt; Cancellation of Ticket and Refund Rules 2015.)</td></tr>
+											<tr><td>4.   The accommodation booked is not transferable and is valid only if the ORIGINAL ID card prescribed is presented during the journey. The ERS/VRM/MRM along with valid id card of any one the passenger booked on e-ticket proof in original would be verified by TTE with the name and PNR on the chart. If the Passenger fail to produced/display ERS/VRM due to any eventuality(loss, damaged mobile/laptop etc.) but has the prescribed original proof of identity, a penalty of Rs.50/- per ticket as applicable to such cases will be levied. The ticket checking staff on board/off board will give excess fare ticket for the same.</td></tr>
+											<tr><td>5.   E-ticket cancellations are permitted through www.irctc.co.in by the user.</td></tr>
+											<tr><td>6.   PNRs having fully waitlisted status will be dropped and the names of the passengers will not appear on the chart. They  are not allowed to board the train. However the namesof PARTIALLY waitlisted/confirmed and RAC will appear in the chart.</td></tr>
+											<tr><td>7.   Obtain certificate from the TTE /Conductor in case of (a) PARTIALLY waitlisted e-ticket when LESS NO. OF PASSENGERS travel, (b)A.C.FAILURE, (c)TRAVEL IN LOWER CLASS. This original certificate must be sent to GGM (IT), IRCTC, Internet Ticketing Centre, IRCA Building, State Entry Road, New Delhi-110055 after filing TDR online within prescribed time  for claiming refund.</td></tr>
+											<tr><td>8.   In case of Partial confirmed/RAC/Wait listed ticket, TDR should be filed online within prescribed time in case NO PASSENGER is travelling  for processing of refund as per Railway refund rules</td></tr>
+											<tr><td>9.   While TDR refund requests are filed &amp; registered on IRCTC website www.irctc.co.in, they are processed by Zonal Railways as per Railway Refund Rules.(detail available on www.irctc.co.in under heading General Information.</td></tr>
+											<tr><td>10.   In premium special train cancellation is not allowed.</td></tr>
+											<tr><td>11.   No refund shall be granted on the confirmed ticket after four hours before the scheduled departure of the train.</td></tr>
+											<tr><td>12.   No refund shall be granted on the RAC or Waitlisted ticket after thirty minutes before the scheduled departure of the train.</td></tr>
+											<tr><td>13.   In case, on a party e-ticket or a family e-ticket issued for travel of more than one passenger, some passengers have confirmed reservation and others are on RAC or waiting list, full refund of fare , less clerkage, shall be admissible for confirmed passengers also subject to the condition that the ticket shall be cancelled online or online TDR shall be filed for all the passengers upto thirty minutes before the scheduled departure of the train.</td></tr>
+											<tr><td>14.   For Suvidha Train , only 50% refund is allowed in case of cancellation of Confirm/RAC tickets upto 6 hours before the scheduled departure of the train or preparation of chart whichever is earlier. </td></tr>
+											<tr><td>15.   In case of Train Cancellation, full refund will be granted automatically by the System.</td></tr>
+											<tr><td>16.   Passengers are advised not to carry inflammable/dangerous/explosive/articles as part of their luggage and also to desist from smoking in the trains.</td></tr>
+											<tr><td>17.    Contact us on: - 24*7 Hrs Customer Support at 011-23340000/011-39340000 , Chennai Customer Care 044 – 25300000 or Mail To: care@irctc.co.in.</td></tr>
+											<tr><td>18.   Variety of meals available in more than 1500 trains. For delivery of meal of your choice on your seat log on to www.ecatering.irctc.co.in or call 1323  Toll Free. For any suggestions/complaints related to Catering services, contact Toll Free No. 1800-111-321 (07.00 hrs to 22.00 hrs)</td></tr>
+											<tr><td>19.   Railway Security Helpline No.182</td></tr>
+											<tr><td>20.   ALL India Passenger Helpline no 138</td></tr>
+											<tr><td>21.   PNR and train arrival/departure enquiry no. 139</td></tr>
+											<tr><td>22.   To report unsavoury situation during journey, Please dial railway security helpline no. 182</td></tr>
+											<tr><td>23.   All the Terms and conditions specified will be applicable in case of opting Travel Insurance facility. Please Refer Travel Insurance’s Terms &amp; Conditions available on Home page of www.irctc.co.in website.</td></tr>
+											<tr><td>24.   Never purchase e-ticket from unauthorized agents or persons, using their personal IDs for commercial purposes. Such tickets are liable to be forfeited under section (143) of the Indian Railway Act 1989. List of authorized agents are available on www.irctc.com E-Ticket Agent Locator</td></tr>
+									  
+								
+							 		
+						
+
+							<tr>
+								<td align="center"><input id="printPageButton" type="button" onclick="printTktPage();" value="Print"></td>
+							</tr>
+				
+						</tbody></table>
+					</td>
+				</tr>
+			</tbody></table><input type="hidden" name="javax.faces.ViewState" id="javax.faces.ViewState" value="-6273413219247339742:-4747405683636448801" autocomplete="off">
+</form><span id="j_idt444" style="display: none;"><script type="text/javascript">processPrintErsEnglish=function(){RichFaces.ajax("j_idt444",null,{"incId":"1"} )};</script></span>
+ 
+
+</body></html>
