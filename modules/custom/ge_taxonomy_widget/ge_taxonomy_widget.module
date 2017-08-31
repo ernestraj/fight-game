@@ -1,0 +1,355 @@
+<?php
+
+/**
+ * @file
+ * Define enhanced autocomplete wdiget.
+ */
+
+
+/**
+ * Implements hook_menu().
+ */
+function ge_taxonomy_widget_menu() {
+  $items['ge_taxonomy_widget/autocomplete/%/%/%/%'] = array(
+    'title' => 'Autocomplete taxonomy',
+    'page callback' => 'ge_taxonomy_widget_taxonomy_autocomplete',
+    'page arguments' => array(2, 3, 4, 5),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_field_widget_settings_form().
+ */
+function ge_taxonomy_widget_form_field_ui_field_edit_form_alter(&$form) {
+  $instance = $form['#instance'];
+  if ($form['#field']['type'] == 'taxonomy_term_reference') {
+    $form['instance']['use_ge_taxonomy_widget'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('GE Taxonomy Widget'),
+      '#description' => t('Using this widget will limit terms in form according to session country or country which node belongs to'),
+      '#default_value' => isset($instance['use_ge_taxonomy_widget']) ? $instance['use_ge_taxonomy_widget'] : FALSE,
+    );
+    $form['instance']['ge_taxonomy_country_field'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Vocabulary field for country'),
+      '#description' => t('Provide machine name for vocabulary country field to use.'),
+      '#default_value' => isset($instance['ge_taxonomy_country_field']) ? $instance['ge_taxonomy_country_field'] : '',
+    );
+    if (module_exists('token')) {
+      // Get the token type for the entity type our field is in (a type 'taxonomy_term' has a 'term' type token).
+      $info = entity_get_info($instance['entity_type']);
+      $form['instance']['ge_taxonomy_widget_country_token'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Use token for providing country information to options available.'),
+        '#description' => t('Using this widget will limit terms in form according to session country or country which node belongs to'),
+        '#default_value' => isset($instance['ge_taxonomy_widget_country_token']) ? $instance['ge_taxonomy_widget_country_token'] : '',
+      );
+      $form['instance']['tokens'] = array(
+        '#theme' => 'token_tree',
+        '#token_types' => array($info['token type']),
+        '#global_types' => TRUE,
+        '#click_insert' => TRUE,
+        '#dialog' => TRUE,
+      );
+    }
+  }
+}
+
+/**
+ * Implements hook_field_widget_form_alter
+ */
+function ge_taxonomy_widget_field_widget_form_alter(&$element, &$form_state, $context) {
+  if ($context['field']['type'] == 'taxonomy_term_reference' && isset($context['instance']['use_ge_taxonomy_widget']) 
+      && $context['instance']['use_ge_taxonomy_widget']) {
+    if (isset($element['#type']) && ($element['#type'] == 'select' || $element['#type'] == 'radios' || $element['#type'] == 'checkboxes')) {
+      $field = field_info_field($element['#field_name']);
+      $instance = field_info_instance($context['instance']['entity_type'], $element['#field_name'], $context['instance']['bundle']);
+      $country = _node_country_value();
+      $global_country = _get_global_term_tid();
+      
+      $field_vocabulary = $field['settings']['allowed_values'][0]['vocabulary'];
+      $country_field = $instance['ge_taxonomy_country_field'];
+      if ($country != $global_country)
+        $allowed = _get_term_ids($country, NULL, $field_vocabulary, $country_field, $element['#type']);
+      else
+        $allowed = _get_term_ids($country, NULL, $field_vocabulary, $country_field, $element['#type'], TRUE);
+      if (!empty($allowed)) {
+	$options = array();
+	if (isset($element['#options']['_none'])) {
+	  $options = array('_none' => $element['#options']['_none']);
+	}
+	else {
+	  $options = array('_none' => theme('options_none', array('instance' => $context['instance'], 'option' => $element['#properties']['empty_option'])));
+	}
+	//$options += array_intersect_key($allowed, $element['#options']);
+	$element['#options'] = $allowed;
+      }
+      else{
+	$options = array();
+	if (isset($element['#options']['_none'])) {
+	  $options = array('_none' => $element['#options']['_none']);
+	}
+	$element['#options'] = $options;
+      }
+    }
+    elseif (isset($element['#autocomplete_path']) || isset($element['tid']['#autocomplete_path'])) {
+      if (isset($element['#field_name'])) {
+	$element['#instance'] = $context['instance'];
+        $element['#autocomplete_path'] = 'ge_taxonomy_widget/autocomplete/' . $element['#field_name'] . '/' . $context['instance']['entity_type']. '/' . $context['instance']['bundle'] . '/' . arg(1) . '/';
+      }
+      // for Reference Dialog widget
+      elseif (isset($element['tid']['#field_name'])) {
+	$element['tid']['#instance'] = $context['instance'];
+	if (!empty($element['tid']['#default_value'])) {
+	  $allowed_term = _get_term_ids($_SESSION['country'], array($element['tid']['#default_value']));
+	  $element['tid']['#default_value'] = current($allowed_term);
+	}
+	if (!empty($context['instance']['view']['size'])) {
+	  $element['tid']['#size'] = $context['instance']['view']['size'];
+	}
+	$element['tid']['#element_validate'] = array('_ge_taxonomy_widget_autocomplete_validate');
+	$element['tid']['#autocomplete_path'] = 'ge_taxonomy_widget/autocomplete/' . $element['tid']['#field_name'] . '/' . $context['instance']['entity_type']. '/' . $context['instance']['bundle'] . '/';	
+      }
+    }
+  }
+}
+
+/**
+ * Validation function for automplete function.
+ */
+function _ge_taxonomy_widget_autocomplete_validate($element, &$form_state, $form) {
+  // If a value was entered into the autocomplete...
+  $value = '';
+  if (!empty($element['#value'])) {
+    if (isset($element['#multiple']) && $element['value_field']['#type'] == 'textfield') {
+      $terms_data = drupal_explode_tags($element['#value']);
+    }
+    else {
+      $terms_data = array($element['#value']);
+    }
+    foreach ($terms_data as $term_data) {
+      // Take "label (term id)', match the id from parenthesis.
+      if (preg_match("/.+\(\s*id\s*:(\d+)\)/", $term_data, $matches)) {
+        if ($element['#instance']['widget']['type'] == 'references_dialog_term_reference') {
+          $value = $matches[1];
+        }
+        else {
+          $value[] = (array) taxonomy_term_load($matches[1]);
+        }
+      }
+      else {
+        $value[] = NULL;
+      }
+    }
+  }
+  // Update the value of this element so the field can validate the product IDs.
+  form_set_value($element, $value, $form_state);
+}
+
+/**
+ * Autocomplete callback for widgets that has autocomplete.
+ */
+function ge_taxonomy_widget_taxonomy_autocomplete($field_name, $entity_type, $bundle_name, $argument, $tid = '', $string = '') {
+  $field = field_info_field($field_name);
+  $instance = field_info_instance($entity_type, $field_name, $bundle_name);
+  $matches = array();
+  $type = 'tags';
+  if (!$field || !$instance || $field['type'] != 'taxonomy_term_reference' || !field_access('edit', $field, $entity_type)) {
+    return MENU_ACCESS_DENIED;
+  }
+
+  $term = NULL;
+  if ($tid !== 'NULL' && is_numeric($tid)) {
+    $term = entity_load_single('taxonomy_term', $tid);
+    if (!$term || !entity_access('view', 'taxonomy_term', $term)) {
+      return MENU_ACCESS_DENIED;
+    }
+  }
+
+  if ($type == 'tags') {
+    // The user enters a comma-separated list of tags. We only autocomplete the last tag.
+    $tags_typed = drupal_explode_tags($string);
+    $tag_last = drupal_strtolower(array_pop($tags_typed));
+    if (!empty($tag_last)) {
+      $prefix = count($tags_typed) ?  drupal_implode_tags($tags_typed) . ', ' : '';
+    }
+  }
+  else {
+    // The user enters a single tag.
+    $prefix = '';
+    $tag_last = $string;
+  }
+
+  if (!empty($tag_last)) {
+    // Get an array of matching entities.
+    $term_labels = _get_referencable_terms($field, $instance, $tag_last, 15, $argument, NULL, FALSE);
+    // Loop through the products and convert them into autocomplete output.
+    foreach ($term_labels as $tid => $label) {
+      $key = "$label";
+      // Names containing commas or quotes must be wrapped in quotes.
+      if (strpos($key, ',') !== FALSE || strpos($key, '"') !== FALSE) {
+        $key = '"' . str_replace('"', '""', $key) . '"';
+      }
+      $matches[$prefix . $key] = $key;
+    }
+  }
+
+  drupal_json_output($matches);
+}
+
+/**
+ * Get the Terms
+ */
+function _get_referencable_terms($field, $instance, $match = NULL, $limit = 0, $argument, $ids = NULL, $width_tid = TRUE) {
+  $terms = array();
+  $view_terms = _get_results_for_term_reference_field($field, $instance, $match, $limit, $argument, $ids);
+  foreach ($view_terms as $tid => $row) {
+    // Strip things like starting/trailing white spaces, line breaks and tags.
+    $terms[$tid] = preg_replace('/\s\s+/', ' ', str_replace("\n", '', trim(decode_entities(strip_tags($row)))));
+    if ($width_tid) {
+      $terms[$tid] .= " (id:$tid)";
+    }
+  }
+  return $terms;
+}
+
+/**
+ * Get the TermsImplements hook_views_plugins_alter().
+ */
+function _get_results_for_term_reference_field($field, $instance, $match = NULL, $limit = 0, $argument, $ids = NULL) {
+  $country = _node_country_value($argument);
+  // Get the results.
+  $vocabulary = $field['settings']['allowed_values'][0]['vocabulary'];
+  $vocabulary_field = $instance['ge_taxonomy_country_field'];
+  $country = _node_country_value();
+  $global_country = _get_global_term_tid();
+
+  if ($country != $global_country)
+    $result = _get_term_ids($country, $match, $vocabulary, $vocabulary_field, "autocomplete");
+  else
+    $result = _get_term_ids($country, $match, $vocabulary, $vocabulary_field, "autocomplete", TRUE);
+  return $result;
+}
+
+/**
+ * Get terms from entity query.
+ */
+function _get_term_ids($country, $match = NULL, $vocabulary, $vocabulary_field, $widget, $global = FALSE) {
+  $term_array = array();
+  if (!empty($vocabulary) && !empty($vocabulary_field)) {
+    $tid_voc = taxonomy_vocabulary_machine_name_load($vocabulary);
+    $taxonomnyquery = new EntityFieldQuery();
+    if (!empty($country)) {
+      $query = $taxonomnyquery->entityCondition('entity_type', 'taxonomy_term');
+      $query->propertyCondition('vid', $tid_voc->vid);
+      if ($widget == "autocomplete")
+       $query->propertyCondition('name', $match, 'STARTS_WITH');
+      if (!$global)
+        $query->fieldCondition($vocabulary_field, 'tid', $country, '=');
+      $query->propertyOrderBy('weight');
+      if ($widget == "autocomplete")
+        $query->range(0, 3);
+      $terms = $query->execute();
+    }
+    foreach($terms['taxonomy_term'] as $item) {
+      $term = taxonomy_term_load($item->tid);
+      $term_array[$item->tid] = $term->name;
+    }
+  }
+  return $term_array;
+}
+
+/**
+ * Implements hook_field_attach_form().
+ */
+function ge_taxonomy_widget_field_attach_form($entity_type, $entity, &$form, &$form_state, $langcode) {
+  // Add validation function to taxonomy_autocompletes, if necessary.
+  $instances = field_info_instances($form['#entity_type'], $form['#bundle']);
+  $country = _node_country_value();
+  $global_country = _get_global_term_tid();
+
+  foreach ($instances as $instance) {
+    if (($instance['widget']['type'] == 'taxonomy_autocomplete' || $instance['widget']['type'] == 'autocomplete_deluxe_taxonomy')
+	&& isset($form[$instance['field_name']]) && $instance['field_name'] == 'field_self_service_roles'
+        && $country != $global_country) {
+
+      // Use the language that is used in this form (which doesn't necessarily
+      // be the default language in $langcode).
+      $lang_key = $form[$instance['field_name']]['#language'];
+      $form[$instance['field_name']][$lang_key]['#element_validate'][] = 'ge_taxonomy_widget_validate_deny_new_terms';
+    }
+  }
+}
+
+/**
+ * Form element validate handler for taxonomy term autocomplete element, which denies any new terms.
+ */
+function ge_taxonomy_widget_validate_deny_new_terms($element, &$form_state, $form) {
+  $country_field = $element['#instance']['ge_taxonomy_country_field'];
+  $parents = $element['#array_parents'];
+  $values = $form_state['values'];
+  // get country of node
+  $node_country = _node_country_value();
+
+  foreach ($element['#array_parents'] as $parent) {
+    $values = $values[$parent];
+  }
+  foreach ($values as $delta => $value) {
+    if ($value['tid'] == 'autocreate')
+      form_error($element, t('%name: new terms are not allowed. Please choose from the given list. Removed roles %value in the list', array('%name' => $element['#title'], '%value' => $value['name'])));
+    elseif (isset($value[$country_field]) && $value[$country_field]['und'][0]['tid'] != $node_country) {
+      $term = taxonomy_term_load($value[$element['#instance']['ge_taxonomy_country_field']]['und'][0]['tid']);
+      form_error($element, t('%name: Removed roles %value in the list which belongs to %country', array('%name' => $element['#title'], '%value' => $value['name'], '%country' => $term->name)));        
+    }
+  }
+
+  $validated_roles = _remove_extra_role($country_field, $form, $form_state, $node_country, $parents);
+  $parents = $element['#array_parents'];
+
+  if ($element['#bundle'] == "field_section")
+    $form['field_group'][LANGUAGE_NONE][$parents[2]]['field_section'][LANGUAGE_NONE][$parents[5]][$parents[6]][LANGUAGE_NONE]['#value'] = $validated_roles;
+  elseif ($element['#bundle'] == "field_link_type_new" && $form['type']['#value'] == "create_links")
+    $form['field_group'][LANGUAGE_NONE][$parents[2]]['field_section'][LANGUAGE_NONE][$parents[5]]['field_link_type_new'][LANGUAGE_NONE][$parents[8]][$parents[9]][LANGUAGE_NONE]['#value'] = $validated_roles;
+  elseif ($element['#bundle'] == "field_group" || $element['#bundle'] == 'field_files' 
+    || $element['#bundle'] == "field_urls" || ($element['#bundle'] == "field_link_type_new" && $form['type']['#value'] == "news_article"))
+    $form[$element['#bundle']][LANGUAGE_NONE][$parents[2]][$parents[3]][LANGUAGE_NONE]['#value'] = $validated_roles;
+  elseif ($element['#bundle'] == "add_page" || $element['#bundle'] == "link_to_a_document" 
+    || $element['#bundle'] == "create_links" || $element['#bundle'] == "news_article")
+    $form[$parents[0]][LANGUAGE_NONE]['#value'] = $validated_roles;
+    
+}
+
+/**
+ * Return valid list of roles for a particular node.
+ */
+function _remove_extra_role($country_field, $form, $form_state, $node_country, $tree) {
+  $validated_roles = '';
+  $values = $form_state['values'];
+  foreach ($tree as $parent) {
+    $values = $values[$parent];
+  }
+  foreach($values as $item) {
+    if ($item['tid'] != 'autocreate') {
+      $term = (array)taxonomy_term_load($item['tid']);
+      if (isset($term[$country_field]) && $term[$country_field]['und'][0]['tid'] == $node_country)
+        $validated_roles .= $item['name'] . ",";
+    }
+  }
+  return $validated_roles;
+}
+
+/**
+ * return country information of node
+ */
+function _node_country_value() {
+  $node = menu_get_object();
+  $country = $_SESSION['country'];
+  if (isset($node))
+    $country = $node->field_country['und'][0]['tid'];
+
+  return $country;  
+}

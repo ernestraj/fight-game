@@ -1,0 +1,6 @@
+name=ge dashboard
+core = "7.x"
+description=Module for portal content
+version = "7.x-1.x-dev"
+dependencies[] = views
+dependencies[]=workbench

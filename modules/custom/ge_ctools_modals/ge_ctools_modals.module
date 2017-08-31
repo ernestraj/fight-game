@@ -1,0 +1,286 @@
+<?php
+
+/**
+ * Drupal form to be put in a modal.
+ */
+function role_form($form, &$form_state) {
+  $form['#attached']['js'][] = drupal_get_path('module', 'ge_ctools_modals') . '/js/ge_ctools.js';
+  $country = $form_state['country'];
+  $form['enter_role'] = array(
+    '#type' => 'select',
+    '#title' => t('Select Roles'),
+    '#options' => _get_roles($country),
+    '#multiple' => TRUE,
+    '#attributes' => array(
+      'class' => array('chosen-widget'),
+    ),
+  );
+
+  $viewname = variable_get('roles_popup_view');
+
+  if (!empty($viewname)) {
+    $target_view = explode('|', $viewname);
+    $view = views_get_view($target_view[0]);
+  }
+
+  $global_country = _get_global_term_tid();
+  $args = array();
+  if (!empty($country)) {
+    if ($country == $global_country) {
+      $args[] = 'all';
+    }
+    else
+      $args[] = $country;
+  }
+  if (!empty($view)) {
+    $view->set_arguments(array(implode('+', $args)));
+    $view->set_display($target_view[1]);
+    $view->display_handler->set_option('use_ajax', TRUE);
+    $view_markup = $view->preview();
+    $html = '';
+
+    // In case there's exposed widgets, put them at the top of the modal.
+    if (!empty($view->exposed_widgets)) {
+      $html .= '<div class="view-filters">' . $view->exposed_widgets . '</div>';
+    }
+
+
+    $form['checkboxes'] = array(
+      '#markup' => $html . $view_markup,
+    );
+  }
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+  );
+  return $form;
+}
+
+/**
+ * Drupal form submit handler.
+ */
+function role_form_submit($form, &$form_state) {
+
+  $terms = $form_state['values']['enter_role'];
+  $fieldname = '#' . $form_state['fieldname'];
+  $tax_array = taxonomy_term_load_multiple($terms);
+  foreach ($tax_array as $tax) {
+    $output.=$tax->name . ',';
+  }
+
+  $ajax_commands = array();
+  if ($form_state['ajax']) {
+    $ajax_commands[] = ctools_modal_command_dismiss();
+  }
+  $ajax_commands[] = array
+    (
+    // The command will be used in our JavaScript file (see next section)
+    'command' => 'insertRole',
+    // We pass the field name and the roles returned from the modal window.
+    'selector' => $fieldname,
+    'roles' => $output,
+  );
+  $form_state['ajax_commands'] = $ajax_commands;
+}
+
+/**
+ * Implementation of hook_menu.
+ */
+function ge_ctools_modals_menu() {
+  $items = array();
+  $items['admin/config/system/site/viewsettings'] = array(
+    'title' => 'Select Views settings for roles popup',
+    'description' => 'Select View settings in use for this site',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ge_admin_forms_roles_views_settings'),
+    'access arguments' => array('Administer vocabularies and terms'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  $items['rolesearch/%ctools_js/%/%'] = array(
+    'title' => 'Role Search',
+    'page callback' => 'main_role_form',
+    'page arguments' => array(1, 2, 3),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+/**
+ * Admin form for setting vocabulary values 
+ */
+function ge_admin_forms_roles_views_settings($form, &$form_state) {
+  // Get a list of all views that contain a "Entityreference View Widget" display.
+  $options = array();
+  $displays = views_get_applicable_views('entityreference view display');
+
+  foreach ($displays as $data) {
+    list($view, $display_id) = $data;
+    $view_name = !empty($view->human_name) ? $view->human_name : $view->name;
+    $options[$view->name . '|' . $display_id] = check_plain($view_name . ' | ' . $view->display_handler->display->display_title);
+  }
+  $form['roles_popup_view'] = array(
+    '#type' => 'select',
+    '#title' => t('View'),
+    '#description' => t('Specify the View to use for selecting items. Only views that have an "Entityreference View Widget" display are shown.'),
+    '#options' => $options,
+    '#default_value' => variable_get('roles_popup_view'),
+    '#required' => TRUE,
+  );
+  return system_settings_form($form);
+}
+
+function main_role_form($ajax, $fieldname, $country) {
+
+  if ($ajax) {
+    ctools_include('ajax');
+    ctools_include('modal');
+    ctools_include('plugins');
+    ctools_modal_add_js();
+    $form_state = array(
+      'ajax' => TRUE,
+      'title' => t('Role form'),
+      'fieldname' => $fieldname,
+      'country' => $country,
+    );
+    // Use ctools to generate ajax instructions for the browser to create
+    // a form in a modal popup.
+    $output = ctools_modal_form_wrapper('role_form', $form_state);
+
+    // If the form has been submitted, there may be additional instructions
+    // such as dismissing the modal popup.
+    if (!empty($form_state['ajax_commands'])) {
+      $output = $form_state['ajax_commands'];
+    }
+
+    // Return the ajax instructions to the browser via ajax_render().
+    print ajax_render($output);
+    drupal_exit();
+  }
+  else {
+    return drupal_get_form('role_form');
+  }
+}
+
+/**
+ * Overrides hook_form_alter
+ */
+function ge_ctools_modals_form_alter(&$form, &$form_state, $form_id) {
+  $content_types = array('add_page_node_form', 'create_links_node_form', 'link_to_a_document_node_form', 'project_node_form', 'news_article_node_form');
+  if ($form_id != 'project_node_form' && in_array($form_id, $content_types)) {
+    $form['#after_build'][] = '_modal_add_js';
+    $form['#attached']['js'][] = drupal_get_path('module', 'ge_ctools_modals') . '/js/ge_ctools.js';
+    $form['#attached']['css'][] = drupal_get_path('module', 'ge_ctools_modals') . '/css/ge_ctools.css';
+    ctools_include('modal');
+    ctools_modal_add_js();
+    $nid = $form['nid']['#value'];
+    if (is_null($nid)) {
+      $country = $_SESSION['country'];
+    }
+    else {
+      $country = $form['field_country']['und']['#default_value'][0];
+    }
+
+    if ($form_id == 'news_article_node_form') {
+      $link_count = $form['field_link_type_new']['und']['#max_delta'];
+      for ($link_delta = 0; $link_delta <= $link_count; $link_delta++) {
+        $form['field_link_type_new']['und'][$link_delta]['field_self_service_roles']['und']['#description'] = l(Roles, 'rolesearch/nojs/edit-field-link-type-new-und-' . $link_delta . '-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+      }
+      $form['field_self_service_roles']['und']['#description'] = l(Roles, 'rolesearch/nojs/edit-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+    }
+
+    if ($form_id == 'link_to_a_document_node_form') {
+      $link_count = $form['field_files']['und']['#max_delta'];
+      for ($link_delta = 0; $link_delta <= $link_count; $link_delta++) {
+        $form['field_files']['und'][$link_delta]['field_self_service_roles']['und']['#description'] = l(Roles, 'rolesearch/nojs/edit-field-files-und-' . $link_delta . '-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+      }
+      $form['field_self_service_roles']['und']['#description'] = l(Roles, 'rolesearch/nojs/edit-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+    }
+
+    if ($form_id == 'create_links_node_form') {
+      $link_count = $form['field_urls']['und']['#max_delta'];
+      for ($link_delta = 0; $link_delta <= $link_count; $link_delta++) {
+        $form['field_urls']['und'][$link_delta]['field_self_service_roles']['und']['#description'] = l(Roles, 'rolesearch/nojs/edit-field-urls-und-' . $link_delta . '-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+      }
+      $form['field_self_service_roles']['und']['#description'] = l(Roles, 'rolesearch/nojs/edit-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+    }
+
+    if ($form_id == 'add_page_node_form') {
+      $grp_count = $form['field_group']['und']['#max_delta'];
+      for ($delta = 0; $delta <= $grp_count; $delta++) {
+        $form['field_group']['und'][$delta]['field_self_service_roles']['und']['#description'] = l(Rolesgrp, 'rolesearch/nojs/edit-field-group-und-' . $delta . '-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+        $sec_count = $form['field_group']['und'][$delta]['field_section']['und']['#max_delta'];
+        for ($sec_delta = 0; $sec_delta <= $sec_count; $sec_delta++) {
+          $form['field_group']['und'][$delta]['field_section']['und'][$sec_delta]['field_self_service_roles']['und']['#description'] = l(Roles . $sec_delta, 'rolesearch/nojs/edit-field-group-und-' . $delta . '-field-section-und-' . $sec_delta . '-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+          $link_count = $form['field_group']['und'][$delta]['field_section']['und'][$sec_delta]['field_link_type_new']['und']['#max_delta'];
+          for ($link_delta = 0; $link_delta <= $link_count; $link_delta++) {
+            $form['field_group']['und'][$delta]['field_section']['und'][$sec_delta]['field_link_type_new']['und'][$link_delta]['field_self_service_roles']['und']['#description'] = l(Roles, 'rolesearch/nojs/edit-field-group-und-' . $delta . '-field-section-und-' . $sec_delta . '-field-link-type-new-und-' . $link_delta . '-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+          }
+        }
+      }
+      $form['field_self_service_roles']['und']['#description'] = l(Roles, 'rolesearch/nojs/edit-field-self-service-roles-und/' . $country, array('attributes' => array('class' => 'ctools-use-modal')));
+    }
+  }
+}
+
+function _modal_add_js($form_element, &$form_state) {
+  ctools_include('modal');
+  ctools_modal_add_js();
+  drupal_add_js(drupal_get_path('module', 'ge_ctools_modals') . '/js/ge_ctools.js');
+  return $form_element;
+}
+
+function _get_roles($country) {
+// We use the machine name to ensure we have the proper vocab
+// that is not fixed to a specific vid on a installation.
+// Define this outside of the two conditions to avoid PHP notices.
+  $term_options_list = array();
+  if ($range_vocab = taxonomy_vocabulary_machine_name_load('self_service_roles')) {
+    $efq = new EntityFieldQuery();
+    $global_country = _get_global_term_tid();
+    if (!empty($country) && ($country != $global_country)) {
+      $result = $efq->entityCondition('entity_type', 'taxonomy_term')
+          ->propertyCondition('vid', $range_vocab->vid)
+          ->fieldCondition('field_role_country', 'tid', $country, '=')
+          ->propertyOrderBy('weight')
+          ->execute();
+    }
+    if (!empty($country) && ($country == $global_country)) {
+      $result = $efq->entityCondition('entity_type', 'taxonomy_term')
+          ->propertyCondition('vid', $range_vocab->vid)
+          ->propertyOrderBy('weight')
+          ->execute();
+    }
+
+    if (!empty($result['taxonomy_term'])) {
+      // To load all terms.
+      $terms = taxonomy_term_load_multiple(array_keys($result['taxonomy_term']));
+      // To generate an options list.
+      foreach ($terms as $term) {
+        // To hook into i18n and everything else, use entity_label().
+        $term_options_list[$term->tid] = entity_label('taxonomy_term', $term);
+        // Single language, no term label alters.
+        $term_options_list[$term->tid] = $term->name;
+      }
+    }
+  }
+// IMPORTANT. This was for a select list that expects raw values.
+// If ANYTHING else is required, escape the term names, either here
+// or where the name is used.
+  $safe_term_options_list = array_map('check_plain', $term_options_list);
+  return $safe_term_options_list;
+}
+
+function _get_global_term_tid() {
+  $global_country_tid = variable_get('global_country_tid');
+  if (!isset($global_country_tid)) {
+    $taxs = taxonomy_get_term_by_name('GBL', 'country');
+    if (!empty($taxs)) {
+      foreach ($taxs as $tax) {
+        $global_country_tid = $tax->tid;
+      }
+    }
+  }
+  return $global_country_tid;
+}

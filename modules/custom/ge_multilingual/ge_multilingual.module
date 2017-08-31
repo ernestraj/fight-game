@@ -1,0 +1,269 @@
+<?php
+
+/**
+ * @file Rules integration for supporting node changes outside workbench/
+
+  /**
+ * Implements hook_rules_action_info().
+ */
+function ge_multilingual_rules_action_info() {
+  $items['change_project'] = array(
+    'label' => t('Change Project Name'),
+    'parameter' => array(
+      'node' => array(
+        'type' => 'node',
+        'label' => t('node'),
+        'description' => t('node'),
+        'default mode' => 'selector',
+      ),
+      'projectname' => array(
+        'type' => 'node',
+        'label' => t('projectname'),
+        'description' => t('projectname'),
+        'default mode' => 'selector',
+      ),
+    ),
+    'group' => t('Portal'),
+    'access callback' => 'ge_multilingual_rules_access_callback',
+    'base' => 'change_project_name',
+  );
+  $items['node_change_state'] = array(
+    'label' => t('Node state Change'),
+    'parameter' => array(
+      'node' => array(
+        'type' => 'node',
+        'label' => t('node'),
+        'description' => t('Node available for testin'),
+        'default mode' => 'selector',
+      ),
+    ),
+    'group' => t('Portal'),
+    'access callback' => 'ge_multilingual_rules_access_callback',
+    'base' => 'node_state_change',
+  );
+  $items['node_sync_roles'] = array(
+    'label' => t('Node sync_roles'),
+    'parameter' => array(
+      'node' => array(
+        'type' => 'node',
+        'label' => t('node'),
+        'description' => t('Node available for testin'),
+        'default mode' => 'selector',
+      ),
+    ),
+    'group' => t('Portal'),
+    'access callback' => 'ge_multilingual_rules_access_callback',
+    'base' => 'ge_multilingual_sync',
+  );
+  $items['taxonomy_index_update'] = array(
+    'label' => t('Update taxonomy index table'),
+    'parameter' => array(
+      'node' => array(
+        'type' => 'node',
+        'label' => t('node'),
+        'description' => t('Taxonomy index update node'),
+        'default mode' => 'selector',
+      ),
+    ),
+    'group' => t('Portal'),
+    'access callback' => 'ge_multilingual_rules_access_callback',
+    'base' => 'ge_multilingual_taxonomy_index_update',
+  );
+
+  return $items;
+}
+
+/**
+ * Callback function for Taxonomy index table update
+ */
+function ge_multilingual_taxonomy_index_update($node) {
+  taxonomy_build_node_index($node);
+  entity_get_controller('node')->resetCache(array($node->nid));
+}
+
+/**
+ * Change project name access for user.
+ */
+function _change_project_access($node) {
+  global $user;
+  if (node_access("update", $node, $user) === TRUE) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+/**
+ * Condition callback: Send node that has been changed its status from Published to Draft
+ */
+function change_project_name($node, $projectname) {
+  if (!is_object($node) || !is_object($projectname))
+    return FALSE;
+
+  if (!_change_project_access($node)) {
+    drupal_set_message("You do not have permission to change project name", "error");
+    return FALSE;
+  }
+
+  $node->revision = 1;
+  $node->field_projectname['und'][0]['target_id'] = $projectname->nid;
+  node_save($node);
+
+  $translation_set = translation_node_get_translations($node->tnid);
+  if (is_array($translation_set)) {
+    foreach ($translation_set as $tnode) {
+      if ($tnode->nid !== $node->nid) {
+        $translation_node = entity_load_single('node', $tnode->nid);
+        $translation_revision = workbench_moderation_node_current_load($translation_node);
+        $translation_revision->revision = 1;
+        $translation_revision->field_projectname['und'][0]['target_id'] = $projectname->nid;
+        $flag = TRUE;
+        if (workbench_moderation_node_is_current($translation_revision) && $translation_revision->status == 1) {
+          $flag = FALSE;
+        }
+        if ($flag) {
+          node_save($translation_revision);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * base call back for transition state change
+ * rules action
+ */
+function node_state_change($node) {
+  if (!is_object($node))
+    return FALSE;
+
+  entity_get_controller('node')->resetCache(array($node->nid));
+  $translation_set = translation_node_get_translations($node->nid);
+  if (is_array($translation_set)) {
+    foreach ($translation_set as $tnode) {
+      if ($tnode->nid !== $node->nid) {
+        $translation_node = entity_load_single('node', $tnode->nid);
+        // Check access to perform this moderation, on the latest revision of the node
+        $translation_node = workbench_moderation_node_current_load($translation_node);
+        $translation_node->workbench_moderation['updating_live_revision'] = array(TRUE);
+        // Moderate the node
+        if (!$translation_node->workbench_moderation['current']->published) {
+          workbench_moderation_moderate($translation_node, $node->workbench_moderation['current']->state);
+          entity_get_controller('node')->resetCache(array($tnode->nid));
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Overrides hook_node_delete.
+ */
+function ge_multilingual_node_delete($node) {
+  $content_types = array('tour', 'add_page', 'create_links', 'link_to_a_document', 'news_article', 'section', 'multisite');
+  if (in_array($node->type, $content_types) && $node->nid == $node->tnid) {
+    $all = translation_node_get_translations($node->tnid);
+    if (is_array($all)) {
+      foreach ($all as $del) {
+        if ($node->nid != $del->nid) {
+          translation_remove_from_set(node_load($del->nid));
+          node_load(NULL, NULL, TRUE);
+          node_delete($del->nid);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Sync function for self service roles
+ */
+function ge_multilingual_sync($node) {
+
+  if (!is_object($node))
+    return false;
+  if ($node->nid == $node->tnid) {
+    $source_node_revision = workbench_moderation_node_current_load($node);
+    $translation_set = translation_node_get_translations($node->tnid);
+    if (is_array($translation_set)) {
+      foreach ($translation_set as $tnode) {
+        if ($tnode->nid !== $node->nid) {
+          $translation_node = entity_load_single('node', $tnode->nid);
+          $translation = workbench_moderation_node_current_load($translation_node);
+          $translation->revision = 1;
+          $flag = TRUE;
+
+          if (workbench_moderation_node_is_current($translation)) {
+            $flag = FALSE;
+          }
+
+          if ($flag) {
+            if ($source_node_revision->type == 'section') {
+              _update_sidebar_translation_nodes($source_node_revision, $translation);
+              node_save($translation);
+            }
+            else {
+              $translation->field_self_service_roles = $source_node_revision->field_self_service_roles;
+              $trans_tags = array();
+              $tags = $source_node_revision->field_tags['und'];
+              $translation_tags = $translation->field_tags['und'];
+              $tids = array();
+
+              foreach ($tags as $tag) {
+                $final_tags[$tag['tid']] = $tag;
+              }
+              foreach ($translation_tags as $t_tag) {
+                $final_tags[$t_tag['tid']] = $t_tag;
+              }
+              $translation->field_tags['und'] = array_values($final_tags);
+              if (isset($source_node_revision->field_menu['und']))
+                $translation->field_menu['und'] = $source_node_revision->field_menu['und'];
+              if (isset($source_node_revision->field_check_policy['und']))
+                $translation->field_check_policy['und'][0]['value'] = $source_node_revision->field_check_policy['und'][0]['value'];
+              //multisite
+              if (isset($source_node_revision->field_multisite_type['und']))
+                $source_node_revision->field_multisite_type['und'] = $translation->field_multisite_type['und'];
+              //link to pages
+              if (isset($source_node_revision->field_window_types['und']))
+                $source_node_revision->field_window_types['und'] = $translation->field_window_types['und'];
+
+              if (isset($source_node_revision->field_policy_category['und']))
+                $translation->field_policy_category['und'] = $source_node_revision->field_policy_category['und'];
+              $translation->field_business['und'] = $source_node_revision->field_business['und'];
+              $translation->field_function['und'] = $source_node_revision->field_function['und'];
+              $translation->field_location['und'] = $source_node_revision->field_location['und'];
+              $translation->field_band['und'] = $source_node_revision->field_band['und'];
+              node_save($translation);
+			}
+           }
+          }
+        }
+      }
+    }
+  }
+
+/* Function to update sidebar section */
+  function _update_sidebar_translation_nodes($source_node_revision,$translation){
+	      $items = field_get_items('node', $source_node_revision, 'field_section');
+		  $source_section = field_collection_field_get_entity($items[0]);
+		  $t_items = field_get_items('node', $translation, 'field_section');
+		  $translation_section = field_collection_field_get_entity($t_items[0]);
+		  $translation_section->field_business['und']=$source_section->field_business['und'];
+		  $translation_section->field_function['und']=$source_section->field_function['und'];
+		  $translation_section->field_location['und']=$source_section->field_location['und'];
+		  $translation_section->field_band['und']=$source_section->field_band['und'];
+		  $tags=$source_section->field_tags['und'];
+		$translation_tags= $translation->field_tags['und'];
+		$tids = array();
+		
+	    foreach($tags as $tag){
+		       $final_tags[$tag['tid']]=$tag;
+  
+        }
+		 foreach($translation_tags as $t_tag){
+		       $final_tags[$t_tag['tid']]=$t_tag;
+  
+        }
+         $translation_section->field_tags['und']=array_values($final_tags); 
+		 $translation_section->field_self_service_roles= $source_section->field_self_service_roles;
+		 $translation_section->save(true);
+}

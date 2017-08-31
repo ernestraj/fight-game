@@ -1,0 +1,107 @@
+diff --git a/workbench_moderation.module b/workbench_moderation.module
+index d8fa4b6..d9c7806 100644
+--- a/workbench_moderation.module
++++ b/workbench_moderation.module
+@@ -1510,8 +1510,13 @@ function workbench_moderation_state_delete($state) {
+ function workbench_moderation_transitions() {
+   $transitions = &drupal_static(__FUNCTION__);
+   if (!isset($transitions)) {
+-    $query = db_select('workbench_moderation_transitions', 't')
+-      ->fields('t', array('id', 'name', 'from_name', 'to_name'));
++    $query = db_select('workbench_moderation_transitions', 't');
++    if (_workbench_moderation_transitions_are_entities()) {
++      $query->fields('t', array('id', 'name', 'from_name', 'to_name'));
++    }
++    else {
++      $query->fields('t', array('from_name', 'to_name'));
++    }
+ 
+     $alias_from = $query->addJoin('INNER', 'workbench_moderation_states', NULL, 't.from_name = %alias.name');
+     $alias_to = $query->addJoin('INNER', 'workbench_moderation_states', NULL, 't.to_name = %alias.name');
+@@ -1526,6 +1531,25 @@ function workbench_moderation_transitions() {
+ }
+ 
+ /**
++ * Helper function to check if transitions are entities.
++ */
++function _workbench_moderation_transitions_are_entities() {
++  $transitions_are_entities = &drupal_static(__FUNCTION__);
++  if (!isset($transitions_are_entities)) {
++    // Drupal core include file is not always loaded.
++    require_once(DRUPAL_ROOT . '/includes/install.inc');
++    // As of schema 7009 all transitions are entities.
++    if (drupal_get_installed_schema_version('workbench_moderation') >= 7009) {
++      $transitions_are_entities = TRUE;
++    }
++    else {
++      $transitions_are_entities = FALSE;
++    }
++  }
++  return $transitions_are_entities;
++}
++
++/**
+  * Saves a moderation state transition.
+  *
+  * Invokes hook_workbench_moderation_transition_save().
+@@ -1541,14 +1565,20 @@ function workbench_moderation_transitions() {
+  * @see hook_workbench_moderation_transition_save()
+  */
+ function workbench_moderation_transition_save($transition) {
+-  $status = db_merge('workbench_moderation_transitions')
+-    ->key(array(
++  $status = db_merge('workbench_moderation_transitions');
++  if (_workbench_moderation_transitions_are_entities()) {
++    $status->key(array(
+       'name' => $transition->name,
+       'from_name' => $transition->from_name,
+       'to_name' => $transition->to_name,
+-    ))
+-    ->fields((array) $transition)
+-    ->execute();
++    ));
++  }
++  else {
++    $status->key(array(
++      'from_name' => $transition->from_name,
++      'to_name' => $transition->to_name));
++  }
++  $status->fields((array) $transition)->execute();
+ 
+   foreach (module_implements('workbench_moderation_transition_save') as $module) {
+     // Don't call this function! That would lead to infinite recursion.
+@@ -2406,7 +2436,9 @@ function workbench_moderation_transition_access($op, $profile = NULL, $account =
+  * Label callback for workbench_moderation_transitions, for reference fields.
+  */
+ function workbench_moderation_transition_label_callback($workbench_moderation_transition, $type) {
+-  return empty($workbench_moderation_transition->name) ? 'Unnamed Workbench Moderation Transition' : $workbench_moderation_transition->name;
++  if (_workbench_moderation_transition_are_entities()) {
++    return empty($workbench_moderation_transition->name) ? 'Unnamed Workbench Moderation Transition' : $workbench_moderation_transition->name;
++  }
+ }
+ 
+ /**
+@@ -2424,8 +2456,10 @@ function workbench_moderation_transition_label_callback($workbench_moderation_tr
+  * @see workbench_moderation_transition_load_multiple()
+  */
+ function workbench_moderation_transition_load($id, $reset = FALSE) {
+-  $workbench_moderation_transition = workbench_moderation_transition_load_multiple(array($id), array(), $reset);
+-  return reset($workbench_moderation_transition);
++  if (_workbench_moderation_transitions_are_entities()) {
++    $workbench_moderation_transition = workbench_moderation_transition_load_multiple(array($id), array(), $reset);
++    return reset($workbench_moderation_transition);
++  }
+ }
+ 
+ /**
+@@ -2446,7 +2480,9 @@ function workbench_moderation_transition_load($id, $reset = FALSE) {
+  * @see workbench_moderation_transition_load()
+  */
+ function workbench_moderation_transition_load_multiple($ids = array(), $conditions = array(), $reset = FALSE) {
+-  return entity_load('workbench_moderation_transition', $ids, $conditions, $reset);
++  if (_workbench_moderation_transitions_are_entities()) {
++    return entity_load('workbench_moderation_transition', $ids, $conditions, $reset);
++  }
+ }
+ 
+ /**

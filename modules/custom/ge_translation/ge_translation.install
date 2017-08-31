@@ -1,0 +1,13 @@
+<?php
+/**
+ * Implements hook_enable()
+ */
+function ge_translation_enable() {
+  db_update('system')
+    ->fields(array('weight' => 20))
+    ->condition('type', 'module')
+    ->condition('name', 'ge_translation')
+    ->execute();
+}
+
+

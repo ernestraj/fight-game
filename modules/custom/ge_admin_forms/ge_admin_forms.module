@@ -1,0 +1,401 @@
+<?php
+
+/**
+ * Implements hook_permission().
+ *
+ * Defines a new permission called 'my custom permission'.
+ */
+function ge_admin_forms_permission() {
+  return array(
+    'add project' => array(
+      'title' => t('Add Project'),
+      'description' => t('Allows user to add project to nodes on project page.'),
+    ),
+  );
+}
+
+function ge_admin_forms_menu() {
+  $items = array();
+  
+  $items['admin/config/system/site'] = array(
+    'title' => 'Select site settings',
+    'description' => 'Select Vocabulary names in use for this site',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ge_admin_forms_admin'),
+    'access arguments' => array('access content'),
+  );
+  $items['admin/config/system/site/settings'] = array(
+    'title' => 'Settings',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => '-2'
+  );
+  $items['admin/config/system/site/environment'] = array(
+    'title' => 'Enviroment indicator settings',
+    'description' => "Provide enviroment url's for this platform",
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ge_admin_forms_environment_admin'),
+    'type' => MENU_LOCAL_TASK,
+  );
+   $items['admin/config/system/site/restricting_nodes'] = array(
+    'title' => 'Add nodes/users that needs restriction',
+    'description' => "Provide nodes",
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ge_admin_forms_nodes_users'),
+	'access arguments' => array('access content'),
+    'type' => MENU_LOCAL_TASK,
+  );
+   $items['admin/config/system/site/taxonomyvariables'] = array(
+    'title' => 'Select taxonomy settings',
+    'description' => 'Select taxonomy settings in use for this site',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ge_admin_forms_taxonomy_admin'),
+      'access arguments' => array('access content'),
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['admin/config/system/site/variables'] = array(
+   'title' => 'Select site settings',
+    'description' => 'Form to set',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ge_admin_forms_site_admin'),
+     'access arguments' => array('access content'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  return $items;
+}
+
+/**
+Function to set nodes and users restrictions */
+
+function ge_admin_forms_nodes_users($form,&$form_state) {
+
+     $form = array();
+  $options = _get_published_nids();
+  
+
+  $form['nodes_to_restrict'] = array(
+    '#title' => "Node id's that needs restriction",
+    '#type' => 'select',
+    '#options' => $options,
+    '#multiple' => TRUE,
+	'#default_value' => variable_get('nodes_to_restrict'),
+    '#attributes' => array(
+      'class' => array('chosen-widget'),
+     ),
+  );
+
+   
+  $options = _get_users();
+
+  $form['users_to_allow_access'] = array(
+    '#title' => "Users to allow access (view,update,delete) to above nodes",
+    '#type' => 'select',
+    '#options' => $options,
+    '#multiple' => TRUE,
+	 '#default_value' => variable_get('users_to_allow_access'),
+    '#attributes' => array(
+      'class' => array('chosen-widget'),
+     ),
+  );
+  
+   return system_settings_form($form);
+  
+}
+
+/**
+ * get all pubslished/unpublised nodes in search form
+ */
+function _get_published_nids() {
+    $query = new EntityFieldQuery();
+  $result = $query->entityCondition('entity_type', 'node')
+       ->execute();
+  $result_nodes=$result['node'];
+  $nodes = array();
+  foreach($result_nodes as $n) {
+    $nodes[$n->nid] = $n->nid;
+	}
+  return $nodes;
+}	
+
+/*Get users*/
+
+function _get_users(){	
+	$users = entity_load('user');
+    $user_names = array();
+   foreach ($users as $user_id => $user) {
+     $user_names[$user->name] = $user->name;
+   }
+   
+   return $user_names;
+ }
+
+/**
+ * Admin form for setting vocabulary values 
+ */
+function ge_admin_forms_taxonomy_admin($form,&$form_state) {
+    $options_tids=array();
+    $vocabulary=variable_get('ge_country','country');
+    $options_tids = _get_tids('country');
+    $business_tids=_get_tids('ge_bfl_businesses');
+    $function_tids=_get_tids('ge_bfl_functions');
+    $location_tids=_get_tids('ge_bfl_locations');
+    $band_tids=_get_tids('ge_bfl_band');
+    $news_type=_get_tids('news_type');
+   $form['global_country_tid'] = array(
+    '#type' => 'select',
+	  '#default_value' => variable_get('global_country_tid'),
+    '#title' => t('Select Global Country tid'),
+    '#description' => t("Global Country Tid"),
+    '#options' => $options_tids,
+    '#required' => TRUE,
+ );
+     $form['business_all'] = array(
+    '#type' => 'select',
+	  '#default_value' => variable_get('business_all'),
+    '#title' => t('Select Business All'),
+    '#description' => t("Business All"),
+    '#options' => $business_tids,
+    '#required' => TRUE,
+ );
+   $form['function_all'] = array(
+    '#type' => 'select',
+	  '#default_value' => variable_get('function_all'),
+    '#title' => t('Select Function All'),
+    '#description' => t("Function All"),
+    '#options' => $function_tids,
+    '#required' => TRUE,
+ );
+   
+   $form['location_all'] = array(
+    '#type' => 'select',
+	  '#default_value' => variable_get('location_all'),
+    '#title' => t('Location All'),
+    '#description' => t("Location All"),
+    '#options' => $location_tids,
+    '#required' => TRUE,
+ );
+    $form['band_all'] = array(
+    '#type' => 'select',
+	  '#default_value' => variable_get('band_all'),
+    '#title' => t('Band All'),
+    '#description' => t("Band All"),
+    '#options' => $band_tids,
+    '#required' => TRUE,
+ );
+    $form['alert_news_type'] = array(
+    '#type' => 'select',
+	  '#default_value' => variable_get('alert_news_type'),
+    '#title' => t('Alert News Type'),
+    '#description' => t("Alert News type term"),
+    '#options' => $news_type,
+    '#required' => TRUE,
+ );
+  return system_settings_form($form);
+}
+
+
+/**
+ * Admin form for setting vocabulary values 
+ */
+function ge_admin_forms_admin() {
+  $options = _get_vocabularies(NULL);
+  $form = array();
+    $form['title_in_news_article'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Character Limit for Title in News Article'),
+    '#default_value' => variable_get('title_in_news_article', '50'),
+    '#description' => t("Enter Limit for Title in News Article"),
+    '#required' => TRUE,
+  );
+    $form['description_in_news_article'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Character Limit for Description in News Article'),
+    '#default_value' => variable_get('description_in_news_article', '300'),
+    '#description' => t("Enter Limit for descrption in News Article"),
+    '#required' => TRUE,
+  );
+   $form['title_for_all'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Title Limit for All content-types'),
+    '#default_value' => variable_get('title_for_all', '30'),
+    '#description' => t("Enter Limit for title for all "),
+    '#required' => TRUE,
+  );
+  $form['ge_menu'] = array(
+    '#type' => 'select',
+    '#title' => t('Select which name is menu(vocabulary machine name will be saved)'),
+    '#default_value' => variable_get('ge_menu', 'menu'),
+    '#description' => t("menu is the taxonomy term used to define categories alias menu..Please do not touch this if you dont know what u are doing"),
+    '#options' => $options,
+    '#required' => TRUE,
+  );
+    $form['ge_country'] = array(
+    '#type' => 'select',
+    '#title' => t('Select which name is menu(vocabulary machine name will be saved)'),
+    '#default_value' => variable_get('ge_country', 'country'),
+    '#description' => t("Country is the taxonomy term used to define countries..Please do not touch this if you dont know what u are doing"),
+    '#options' => $options,
+    '#required' => TRUE,
+  );
+  $form['ge_self_service_roles'] = array(
+    '#type' => 'select',
+    '#title' => t('Select which taxonomy term name is for self-service-roles(vocabulary machine name will be saved)'),
+    '#default_value' => variable_get('ge_self_service_roles', 'self_service_roles'),
+    '#description' => t("self service roles settings.Please do not touch this unless you know what you are doing"),
+    '#options' => $options,
+    '#required' => TRUE,
+  );
+  $form['ge_link_type'] = array(
+    '#type' => 'select',
+    '#title' => t('LINK TYPE (vocabulary machine name will be saved)'),
+    '#default_value' => variable_get('ge_window_type', 'link_type'),
+    '#description' => t("Please do not touch this unless you know what you are doing"),
+    '#options' => $options,
+    '#required' => TRUE,
+  );
+
+  $link_type = variable_get('ge_link_type');
+  if (!empty($link_type)) {
+    $options_link_type = _get_taxonomies($link_type);
+
+
+    $form['ge_link'] = array(
+      '#type' => 'select',
+      '#title' => t('Link'),
+      '#default_value' => variable_get('ge_link', 'link'),
+      '#description' => t("Link in Links/Files in section"),
+      '#options' => $options_link_type,
+      '#required' => TRUE,
+    );
+    $form['ge_files'] = array(
+      '#type' => 'select',
+      '#title' => t('Files'),
+      '#default_value' => variable_get('ge_files', 'files'),
+      '#description' => t("Files in Links/Files in section"),
+      '#options' => $options_link_type,
+      '#required' => TRUE,
+    );
+    $form['ge_existing_url'] = array(
+      '#type' => 'select',
+      '#title' => t('Existing url'),
+      '#default_value' => variable_get('ge_existing_url', 'existing url'),
+      '#description' => t("Existing url in Links/Files in section"),
+      '#options' => $options_link_type,
+      '#required' => TRUE,
+    );
+  }
+  return system_settings_form($form);
+}
+
+/**
+ * Admin form for setting environment instances
+ */
+function ge_admin_forms_environment_admin () {
+  $form = array();
+
+  $form['ge_prod_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Production instance url'),
+    '#default_value' => variable_get('ge_prod_url', 'benefitscms.corporate.ge.com/eeview/'),
+    '#description' => "Provide production instance url for eeview without https://",
+    '#required' => TRUE,
+  );
+  $form['ge_stage_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Stage instance url'),
+    '#default_value' => variable_get('ge_stage_url', 'stage-benefitscms.corporate.ge.com/eeview/'),
+    '#description' => "Provide stage instance url for eeview without https://",
+    '#required' => TRUE,
+  );
+  $form['ge_dev_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Dev instance url'),
+    '#default_value' => variable_get('ge_dev_url', 'dev-benefitscms.corporate.ge.com:8080/eeview/'),
+    '#description' => "Provide dev instance url for eeview without http://",
+    '#required' => TRUE,
+  );
+
+  return system_settings_form($form);
+}
+
+/**
+ * Admin form for setting vocabulary values 
+ */
+function ge_admin_forms_site_admin() {
+  $options = _get_vocabularies(NULL);
+  $form = array();
+  $form['ge_lookup_services'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Type the url to be used for look-up services'),
+    '#default_value' => variable_get('ge_lookup_services', 'http://services.dmt.corporate.ge.com/lookupservices'),
+    '#description' => "eg-http://services.dmt.corporate.ge.com/lookupservices more details at http://wiki.corporate.ge.com/imtprojects/index.php/LookupServices",
+    '#required' => TRUE,
+  );
+  return system_settings_form($form);
+}
+
+/**
+ * validate if needed
+  function ge_admin_forms_admin_validate($form, &$form_state) {
+  }
+ */
+/* Get list of vocabulary items */
+
+/**
+ * This function will return a vocabulary object which matches the
+ * given name. Will return null if no such vocabulary exists.
+ *
+ * @param String $vocabulary_name
+ *   This is the name of the section which is required
+ * @return Object
+ *   This is the vocabulary object with the name
+ *   or null if no such vocabulary exists
+ */
+function _get_vocabularies($voc) {
+  $names = array();
+  $vocabs = taxonomy_get_vocabularies($voc);
+  foreach ($vocabs as $vocab_object) {
+    $names[$vocab_object->machine_name] = $vocab_object->name;
+  }
+  return $names;
+}
+
+/**
+ * This function will return a vocabulary object which matches the
+ * given name. Will return null if no such vocabulary exists.
+ *
+ * @param String $vocabulary_name
+ *   This is the name of the section which is required
+ * @return Object
+ *   This is the vocabulary object with the name
+ *   or null if no such vocabulary exists
+ */
+function _get_tids($voc) {
+  $names = array();
+  $vid = taxonomy_vocabulary_machine_name_load($voc)->vid;
+  $terms = taxonomy_get_tree($vid);
+  foreach ($terms as $term) {
+    $names[$term->tid] = $term->name;
+  }
+  return $names;
+}
+
+/**
+ * This function will return a vocabulary object which matches the
+ * given name. Will return null if no such vocabulary exists.
+ *
+ * @param String $vocabulary_name
+ *   This is the name of the section which is required
+ * @return Object
+ *   This is the vocabulary object with the name
+ *   or null if no such vocabulary exists
+ */
+function _get_taxonomies($voc) {
+  $names = array();
+  $vid = taxonomy_vocabulary_machine_name_load($voc)->vid;
+  $terms = taxonomy_get_tree($vid);
+  foreach ($terms as $term) {
+    $names[$term->name] = $term->name;
+  }
+  return $names;
+}

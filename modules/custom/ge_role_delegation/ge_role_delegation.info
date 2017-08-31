@@ -1,0 +1,6 @@
+name = GE Role delegation
+description =Submodule for Role delegation
+core = 7.x
+
+
+

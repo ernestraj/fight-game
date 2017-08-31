@@ -1,0 +1,26 @@
+<?php
+
+/**
+ * 
+ * Implements hook_node_validate
+ * @param objec $node
+ * @param array $form
+ * @param array $form_state
+ */
+function ge_node_changes_node_validate($node, $form, &$form_state) {
+  if ($node->type == 'link_to_a_document') {
+    if (isset($node->op) && $node->op != 'Delete') {
+      $files = $node->field_files;
+      foreach ($files as $file) {
+        foreach ($file as $key => $value) {
+          if ($key != 'add_more') {
+            $doc = isset($value['field_document']['und'][0]['fid']) ? $value['field_document']['und'][0]['fid'] : '0';
+            if ($doc == 0) {
+              form_set_error('form', t('Please upload file.'));
+            }
+          }
+        }
+      }
+    }
+  }
+}

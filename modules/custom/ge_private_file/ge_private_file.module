@@ -1,0 +1,16 @@
+<?php
+/*Implements hook file_download_access.Benefits will send header only then allow file download */
+function ge_private_file_file_download_access($file_item, $entity_type, $entity) {
+  $benefits = $_SERVER["HTTP_BENEFITSREQUEST"];
+  $file_uri = $file_item['uri'];
+  if ($benefits == 'true') {
+   // watchdog('headers', '%value', array('%value' => $benefits), WATCHDOG_NOTICE, $link = NULL);
+    if (file_exists($file_uri)) {
+      return TRUE;
+    }
+    else {
+      drupal_access_denied();
+      return FALSE;
+    }
+  }
+}

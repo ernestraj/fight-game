@@ -1,0 +1,2 @@
+Contrib Modules are the modules downloaded from drupal.org to extend drupal functionality. 
+Please add any custom modules that are written specifically for this site to custom folder. 

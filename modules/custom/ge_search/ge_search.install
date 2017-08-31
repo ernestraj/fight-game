@@ -1,0 +1,155 @@
+<?php
+
+function ge_search_schema() {
+  $schema['ge_data_search'] = array(
+    'description' => t('The base table for GE Search.'),
+    'fields' => array(
+      'id' => array(
+        'description' => t('Primary key for table.'),
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      'pageid' => array(
+        'description' => t('The primary identifier for a node.'),
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'last_updated' => array(
+        'description' => 'The Unix timestamp when the node was most recently saved.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'created' => array(
+        'description' => 'The Unix timestamp when the node was most recently saved.',
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'length' => 24,
+        'default' => 0,
+      ),
+      'title' => array(
+        'description' => t('Title for each field'),
+        'type' => 'varchar',
+        'length' => 255,
+      ),
+      'body' => array(
+        'description' => t('Searchable text'),
+        'type' => 'text',
+        'size' => 'medium',
+      ),
+      'business' => array(
+        'description' => t('Business information of targeted content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'business_segment' => array(
+        'description' => t('Business Segment information of targeted content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'sub_business' => array(
+        'description' => t('Sub Business information of targeted content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'job_family' =>array(
+        'description' => t('Job Family information of targeted content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'function' =>array(
+        'description' => t('Function information of targeted content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'region' => array(
+        'description' => t('Region to which content is associated.'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'country' => array(
+        'description' => t('Country associated with Targeted Content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'state' => array(
+        'description' => t('State associated with Targeted Content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'city' => array(
+        'description' => t('City associated with Targeted Content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'roles' => array(
+        'description' => t('Roles being targeted'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'band' => array(
+        'description' => t('Band targeting for content'),
+        'type' => 'text',
+        'size' => 'normal',
+      ),
+      'tags' => array(
+        'description' => t('Tags entered by content editor'),
+        'type' => 'text',
+        'size' => 'normal',
+        'default' => NULL,
+      ),
+      'portal' => array(
+        'description' => t('Portal to which content belongs.'),
+        'type' => 'varchar',
+        'length' => 24,
+      ),
+      'language' => array(
+        'description' => t('Language of the content'),
+        'type' => 'varchar',
+        'length' => 10,
+      ),
+      'path' => array(
+        'description' => t('Path of the link to which content will get redirected to.'),
+        'type' => 'text',
+        'size' => 'normal',
+        'default' => NULL,
+      ),
+      'weight' => array(
+        'description' => 'Weight of content being used for sorting.',
+        'type' => 'int',
+        'not null' => FALSE,
+        'default' => 0,
+      ),
+      'categoryid' => array(
+        'description' => t('Identifier for policies and procedures document.'),
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'expired' => array(
+        'description' => 'This column will hold the value for expiring nodes.',
+        'type' => 'varchar',
+        'not null' => FALSE,
+        'length' => 24,
+      ),
+      'node_type' => array(
+        'description' => t('Content type machine name of the record.'),
+        'type' => 'varchar',
+        'length' => 255,
+      ),
+      'promoted' => array(
+        'description' => 'This column will flag content and this content would be shown differently in front end.',
+        'type' => 'int',
+        'not null' => FALSE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('id'),
+  );
+
+  return $schema;
+}
+
+?>

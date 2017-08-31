@@ -1,0 +1,7 @@
+name=ge filtering
+core = "7.x"
+dependencies[] = ge_workbench_access
+description=Module for filtering taxonomy per country
+version = "7.x-1.x-dev"
+project = "GE"
+

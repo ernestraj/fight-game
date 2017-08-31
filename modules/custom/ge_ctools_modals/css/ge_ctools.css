@@ -1,0 +1,13 @@
+a.ctools-use-modal.ctools-use-modal-processed {
+
+font-size: 0;
+    color: transparent; 
+	float:right;
+
+line-height:24px; /* check your icon height */
+
+background: url(../images/search.png) center left no-repeat;
+
+width:100%;
+
+}

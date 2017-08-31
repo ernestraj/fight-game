@@ -1,0 +1,11 @@
+name = GE Reports URL Patterns
+description = Allow authenticated users to run database query from console and download result in Excel/CSV.
+core = 7.x
+configure = admin/reports-url-patterns
+
+; Information added by Drupal.org packaging script on 2017-02-14
+version = "7.x-1.0"
+core = "7.x"
+project = "custom"
+datestamp = "1476450468"
+

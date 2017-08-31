@@ -1,0 +1,1246 @@
+<?php
+
+/**
+ * @file
+ * Module for adding and removing respective permissions,
+ * from a user profile. 
+ *
+ * It will also allow super user to add user bby searching
+ * with user name or their SSO ID. 
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function ge_role_delegation_menu() {
+
+  $items['admin/workbench/gepeople'] = array(
+    'title' => 'GE Role Delegation',
+    'page callback' => 'ge_role_delegation_get_form',
+    'access arguments' => array('access role delegation'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 50,
+  );
+
+  $items['geuser/autocomplete'] = array(
+    'title' => 'user autocomplete',
+    'page callback' => 'users_autocomplete',
+    'access arguments' => array('access role delegation'),
+    'type' => MENU_CALLBACK
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function ge_role_delegation_permission() {
+  return array(
+    'access role delegation' => array(
+      'title' => t('Access page to role delegate'),
+    )
+  );
+}
+
+/**
+ * Drupal form for module config.
+ */
+function ge_role_delegation_get_form() {
+  return drupal_get_form('ge_role_delegation_form');
+}
+
+/**
+ * Implements hook form.
+ */
+function ge_role_delegation_form($form, &$form_state) {
+  global $user;
+  $target_user = !empty($form_values['user_fields']['find_user']);
+  $query_user = '';
+  if (!empty($_GET['user']) && $_GET['q'] !== 'admin/workbench') {
+    $form_state['values']['user_fields']['find_user'] = $_GET['user'];
+    $query_user = $_GET['user'];
+  }
+  if (!empty($target_user)) {
+    $query_user = $target_user;
+  }
+
+  $form_values = isset($form_state['values']) ? $form_state['values'] : FALSE;
+  $target_user = !empty($form_values['user_fields']['find_user']);
+  $form['#tree'] = TRUE;
+  $form['user_fields'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Search User'),
+    '#attributes' => array('class' => array('container-inline')),
+    '#prefix' => '<div id="selection-user">',
+    '#suffix' => '</div>',
+  );
+
+  $form['user_fields']['find_user'] = array(
+    '#title' => t('SSO'),
+    '#type' => 'textfield',
+    '#default_value' => check_plain($query_user),
+    '#autocomplete_path' => 'geuser/autocomplete',
+    '#multiple' => FALSE,
+    '#size' => 50,
+  );
+
+  $is_super_user = in_array('super_user', $user->roles);
+
+//End of search user section on the form ---------------------------------------
+  $target_user_obj = _get_target_user_by_name($form_values['user_fields']['find_user'], FALSE);
+
+  if ($is_super_user && !empty($target_user) && empty($target_user_obj)) {
+    $form['user_fields']['add'] = array(
+      '#type' => 'submit',
+      '#value' => t('Add user'),
+      '#submit' => array('ge_add_user', 'custom_ge_submit'),
+      '#prefix' => '<div id="selection-user">',
+      '#suffix' => '</div>',
+    );
+  }
+
+  if (!empty($target_user_obj) && in_array('administrator', $target_user_obj->roles)) {
+    $form['user_fields']['go']['#value'] = 'Search';
+  }
+
+  $form['user_fields']['go'] = array(
+    '#type' => 'submit',
+    '#value' => t('Search'),
+    '#submit' => array('custom_ge_submit'),
+    '#prefix' => '<div id="selection-user">',
+    '#suffix' => '</div>',
+  );
+
+
+  if (!empty($target_user) && $is_super_user && !in_array('administrator', $target_user_obj->roles) && !in_array('super_user', $target_user_obj->roles) && ($target_user_obj->uid !== $user->uid)) {
+    _set_user_current_roles($form, $form_values, $target_user);
+    _set_user_output($form, $form_values);
+  }
+
+  if (!empty($target_user_obj) && !in_array('administrator', $target_user_obj->roles) && !in_array('super_user', $target_user_obj->roles) && ($target_user_obj->uid !== $user->uid)) {
+    _set_user_current_roles($form, $form_values, $target_user);
+    _set_user_output($form, $form_values);
+    _set_save_controls($form, $form_values, $target_user);
+  }
+
+
+  return $form;
+}
+
+function custom_ge_submit($form, &$form_state) {
+  $form_state['redirect'] = array(
+    'admin/workbench/gepeople',
+    array(
+      'query' => array(
+        'user' => $form_state['values']['user_fields']['find_user'],
+      ),
+    ),
+  );
+}
+
+function ge_add_user($form, &$form_state) {
+  global $user;
+  $target_user = _get_target_user_by_name($form_state['values']['user_fields']['find_user']);
+  if (empty($target_user) && in_array('super_user', $user->roles)) {
+    $user_id = _get_target_user_by_name($form_state['values']['user_fields']['find_user'], TRUE);
+    $target_user = user_load($user_id->uid);
+  }
+  if (isset($target_user->uid)) {
+    drupal_set_message(t('User with SSO.@target_user'), array(@target_user => $target_user->name));
+  }
+}
+
+/**
+ * Sets the drop down lists to save the user's permissions
+ * @global object $user the user object to work with
+ * @param array $form the form array.
+ * @param array $form_values the form values to work with.
+ * @return array an array with the informaiton for the new modules
+ */
+function _set_save_controls(&$form, $form_values, $target_user) {
+  drupal_add_css(drupal_get_path('module', 'ge_role_delegation') . '/css/ge_role_delegation.css');
+  if ($form_values['user_fields']['find_user'] == '') {
+    return $form;
+  }
+  global $user;
+  $target_user_obj = _get_target_user_by_name($form_values['user_fields']['find_user']);
+  if (empty($target_user_obj) || in_array('adminstrator', $target_user_obj->roles) || ($target_user_obj->status == 0)) {
+    return $form;
+  }
+  $form['save_options'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Save Operations'),
+    '#prefix' => '<div class="save">',
+    '#suffix' => '</div>',
+  );
+
+  $form['save_options']['save'] = array(
+    '#type' => 'submit',
+    '#value' => 'Save',
+    '#prefix' => '<div id="save-options-save">',
+    '#suffix' => '</div>',
+  );
+
+  $form['save_options']['cancel'] = array(
+    '#type' => 'submit',
+    '#value' => 'Cancel',
+    '#prefix' => '<div id="save-options-cancel">',
+    '#suffix' => '</div>',
+  );
+
+  if (in_array('super_user', $user->roles)) {
+    $form['save_options']['remove'] = array(
+      '#type' => 'submit',
+      '#value' => 'Inactive',
+      '#name' => 'save_options_remove_button',
+      '#prefix' => '<div id="save-options-remove-button">',
+      '#suffix' => '</div>',
+    );
+  }
+}
+
+/**
+ * Gets the user id for the given name
+ * @param string $name the name to search for.
+ * @return object a user id for the given name.
+ */
+function _get_target_user_by_name($name, $add = FALSE) {
+  $pass = '';
+  $name = check_plain($name);
+  $target_user = user_load_by_name($name);
+  if ($add && empty($target_user)) {
+    $lookup_details = get_user_info($name);
+    $mail = $lookup_details[0]['email'];
+    if (count($lookup_details) == 1 && ($name == $lookup_details[0]['sso']) && valid_email_address($mail)) {
+      $new_user = array(
+        'name' => $lookup_details[0]['sso'],
+        'pass' => $pass, // note: do not md5 the password
+        'mail' => $lookup_details[0]['email'],
+        'status' => 1,
+        'init' => $lookup_details[0]['email'],
+      );
+      user_save(drupal_anonymous_user(), $new_user);
+
+      $target_user = user_load_by_name($name);
+      $key = array_search('editor', $target_user->roles);
+      if (!$key) {
+        $roles = user_roles(TRUE);
+        $rid = array_search('editor', $roles);
+        if ($rid) {
+          $user_roles = $target_user->roles;
+          if (is_array($user_roles)) {
+            $user_roles [$rid] = 'editor';
+            user_save($target_user, array('roles' => $user_roles));
+          }
+        }
+      }
+    }
+    else {
+      if ((valid_email_address($mail) == 0) || empty($mail)) {
+        drupal_set_message(t('Email is not accurate,cannot add this user'));
+      }
+      else {
+        drupal_set_message(t('User is not a valid SSO,cannot retrive from services'));
+      }
+    }
+    $target_user = user_load_by_name($name);
+   
+  }
+  if (!empty($target_user) && (in_array('administrator', $target_user->roles) || in_array('super_user', $target_user->roles))) {
+    drupal_set_message(t('You cannot delegate this user-') . check_plain($target_user->name), 'error', FALSE);
+  }
+  /* Always add editor role for role delagation module */
+    $role = user_role_load_by_name("editor");
+ if (($target_user->uid>0)&&!empty($role->rid)) {
+     user_multiple_role_edit(array($target_user->uid), 'add_role', $role->rid);
+    }
+  return $target_user;
+}
+
+/**
+ * Sets the UI items to add the selecter user permissions.
+ * @global object $user the current user object.
+ * @param type $form the form array to update. the form's values to work with.
+ * @param type $form_values
+ */
+function _set_user_current_roles(&$form, $form_values, $target_user_id) {
+  global $user;
+  $menu_vocab = _get_vocabulary_by_machinename('Menu');
+  $menu_vid = $menu_vocab->vid;
+  $menu_tree = taxonomy_get_tree($menu_vid);
+  $countries[0] = 'None';
+  $section[0] = 'None';
+  $sub_section[0] = 'None';
+  foreach ($menu_tree as $term) {
+
+    if ($term->depth === 0) {
+      $countries[$term->tid] = $term->name;
+    }
+
+    if ($term->depth === 1) {
+      $section[$term->tid] = $term->name;
+      $parent = $term->parents[0];
+    }
+    if ($term->depth === 2) {
+
+      $sub_section[$term->tid] = $term->name;
+    }
+  }
+
+  if (!empty($target_user_id)) {
+    $target_user = _get_target_user_by_name($form_values['user_fields']['find_user'], FALSE);
+    if ($target_user->status != 0) {
+      $my_all_ids = workbench_access_get_user_tree($user);
+      $my_tids = array_keys($my_all_ids);
+      if ($target_user->uid != 0) {
+        $tuser_object = $target_user;
+        $target_all_target_ids = workbench_access_get_user_tree($tuser_object);
+        $target_tids = array_keys($target_all_target_ids);
+        $common_taxonomy = array_intersect($target_tids, $my_tids);
+        $countries_users = '';
+        $section_users = '';
+        if (!empty($common_taxonomy)) {
+          $taxonomies = taxonomy_term_load_multiple($common_taxonomy);
+          foreach ($taxonomies as $tax) {
+            if (isset($section[$tax->tid])) {
+              $section_country = $tax->field_menu_country['und'][0]['tid'];
+              $section_users[$section_country][$tax->tid] = $tax->name;
+            }
+            if (isset($countries[$tax->tid])) {
+              $country_voc = 'country';
+              $country_names = taxonomy_get_term_by_name($tax->name, $country_voc);
+              foreach ($country_names as $country) {
+                $country_name = $country->field_country_name['und'][0]['value'];
+              }
+              $countries_users = '<li>' . $country_name . '</li>' . $countries_users;
+              $country_user_arr[] = $tax->name;
+            }
+          }
+
+          $section_users_string = '';
+          $section_user = '';
+
+          foreach ($section_users as $users_section => $sections) {
+
+            $country = entity_load_single('taxonomy_term', $users_section);
+            foreach ($sections as $section) {
+              $section_user = '<li>' . $section . '</li>' . $section_user;
+            }
+            if (!in_array($country->name, $country_user_arr)) {
+              $section_users_string = '<ul>' . $country->field_country_name['und'][0]['value'] . '</ul>' . $section_user . $section_users_string;
+            }
+            $section_user = '';
+          }
+          $row = array(
+            array('data' => $target_user->name),
+            array('data' => $countries_users),
+            array('data' => $section_users_string),
+          );
+        }
+      }
+
+      $header = array('User Name', 'Portal owner of', 'Categories owner of ');
+      if (!in_array('super_user', $user->roles)) {
+        unset($row[1]);
+        unset($header[1]);
+      }
+
+      $rows[] = $row;
+      $output = theme('table', array('header' => $header, 'rows' => $rows, 'attributes' => array('id' => 'role-delegation-table')));
+      $form['new_scope'] = array(
+        '#markup' => $output,
+      );
+    }
+  }
+}
+
+/**
+ * sets the users output elements required to alter the user's permissions.
+ * @global object $user the current global user object.
+ * @param array $form the form to work with.
+ * @param array $form_values the form values to work with.
+ * @return null alters by reference the $form array.
+ */
+function _set_user_output(&$form, $form_values) {
+  $op = '';
+  if (isset($form_values['op'])) {
+    $op = $form_values['op'];
+  }
+
+  if ($form_values['user_fields']['find_user'] == '') {
+    return $form;
+  }
+  global $user;
+  $fields = array('add', 'remove');
+  $user_id = _get_target_user_by_name($form_values['user_fields']['find_user'], FALSE);
+
+
+  if (($user_id->status == 0) && is_numeric($user_id->uid)) {
+    if (in_array('super_user', $user->roles)) {
+      drupal_set_message(t('User is blocked,Click Unblock to make user active'));
+      $form['unblock'] = array(
+        '#type' => 'submit',
+        '#value' => 'Unblock',
+        '#description' => 'This user is block,click unblock to make active',
+      );
+    }
+  }
+
+  if (is_numeric($user_id->uid) && $user_id->status != 0) {
+    if (in_array('super_user', $user->roles)) {
+      $form['user'] = array(
+        '#markup' => '<b> You are super-user,you can assign Country owners </b>',
+      );
+    }
+    if (!in_array('super_user', $user->roles)) {
+      $form['user'] = array(
+        '#markup' => '<b> You can assign Category owners only</b>',
+      );
+    }
+    $form['user_info'] = array(
+      '#type' => 'vertical_tabs',
+      '#default_tab' => 'edit-add_user_info',
+      '#title' => t('User Permissions'),
+    );
+
+    $target_user = user_load($user_id->uid);
+
+
+
+    foreach ($fields as $field) {
+      $index = $field . '_user_info';
+      $form[$index] = array(
+        '#type' => 'fieldset',
+        '#title' => t(ucwords($field) . ' User Permissions'),
+        '#collapsible' => TRUE,
+        '#group' => 'user_info',
+      );
+
+      $form[$index][$field . '_container'] = array(
+        '#type' => 'fieldset',
+        '#prefix' => '<div id="selection-choices-' . $field . '">',
+        '#suffix' => '</div>',
+      );
+
+      global $user;
+      $options = array();
+      $menu_vocab = _get_vocabulary_by_machinename('Menu');
+      $menu_tree = taxonomy_get_tree($menu_vocab->vid);
+
+      $countries[0] = 'None';
+      $section[0] = 'None';
+      $sub_section[0] = 'None';
+
+      foreach ($menu_tree as $term) {
+
+        if ($term->depth === 0) {
+          $countries[$term->tid] = $term->name;
+        }
+        if ($term->depth === 1) {
+          $section[$term->tid] = $term->name;
+        }
+        if ($term->depth === 2) {
+          $sub_section[$term->tid] = $term->name;
+        }
+      }
+
+      $my_all_ids = workbench_access_get_user_tree($user);
+      $my_tids = array_keys($my_all_ids);
+      $target_all_target_ids = workbench_access_get_user_tree($target_user);
+      $target_tids = array_keys($target_all_target_ids);
+      $common_taxonomy = array_intersect($my_tids, $target_tids);
+      if (!empty($common_taxonomy)) {
+        $taxonomies = taxonomy_term_load_multiple($common_taxonomy);
+        foreach ($taxonomies as $tax) {
+          if (isset($section[$tax->tid])) {
+            $section_country = $tax->field_menu_country['und'][0]['tid'];
+            $country = taxonomy_term_load($section_country);
+            $key = array_search($country->name, $countries);
+            if ($key) {
+              $country_total[$key] = $country->name;
+            }
+          }
+          if (isset($countries[$tax->tid])) {
+            $country_total[$tax->tid] = $tax->name;
+          }
+        }
+      }
+      $user_children = $user;
+      $remove_ids_from_user = $target_user;
+      $my_countrytids = workbench_access_get_user_tree($user_children);
+      foreach ($my_countrytids as $cou_tid) {
+        if ($cou_tid['depth'] == 1) {
+          $country_voc = 'country';
+          $country_names = taxonomy_get_term_by_name($cou_tid['name'], $country_voc);
+          foreach ($country_names as $country_name) {
+            $country_name = $country_name->field_country_name['und'][0]['value'];
+          }
+          $cou_tids[$cou_tid['access_id']] = $country_name;
+        }
+      }
+
+      $workbench_access_allowed_tids = workbench_access_get_user_tree($remove_ids_from_user);
+
+      foreach ($workbench_access_allowed_tids as $tid) {
+        if ($tid['depth'] == 1) {
+          $tids[$tid['access_id']] = $tid['name'];
+        }
+      }
+
+      foreach ($workbench_access_allowed_tids as $tid) {
+        if ($tid['depth'] == 2) {
+          $parent = $tid['parent'];
+          if (isset($countries[$parent])) {
+            $section_country_tids[$parent] = $countries[$parent];
+          }
+        }
+      }
+
+      $remove_ids = $tids;
+      $options_final = array();
+      if (!empty($cou_tids)) {
+        if ($field == 'add') {
+          if (!empty($remove_ids)) {
+            foreach ($remove_ids as $tid => $value) {
+              if (isset($cou_tids[$tid])) {
+                unset($cou_tids[$tid]);
+              }
+            }
+          }
+        }
+
+        if ($field == 'remove' && !in_array('super_user', $user->roles)) {
+          foreach ($section_country_tids as $key => $value) {
+            if (!isset($remove_ids[$key])) {
+              $new_list_sec_coun[$key] = $value;
+            }
+          }
+          /* check if section countries are in scope of  person who is delegating target user */
+          foreach ($cou_tids as $key => $value) {
+            if (isset($new_list_sec_coun[$key])) {
+              $new_list[$key] = $value;
+            }
+          }
+          $cou_tids = $new_list;
+        }
+        $options_final = $cou_tids;
+      }
+      $form[$index][$field . '_container'] = array(
+        '#type' => 'fieldset',
+        '#prefix' => '<div id="selection-choices-' . $field . '">',
+        '#suffix' => '</div>',
+      );
+
+
+      $options_final[0] = is_array($options_final) ? 'None' : 'No categories to ' . $field;
+      ksort($options_final);
+
+      $form[$index][$field . '_container']['countrylist'] = array(
+        '#type' => 'select',
+        '#title' => 'Select Portal',
+        '#options' => $options_final,
+        '#multiple' => FALSE,
+        '#attributes' => array(
+          'class' => array('chosen-widget'),
+        ),
+        '#ajax' => array(
+          'callback' => 'selection_choice_js',
+          'wrapper' => 'selection-choices-' . $field,
+          'event' => 'change',
+          'effect' => 'fade',
+        ),
+      );
+
+      $parent_tid = isset($form_values[$index][$field . '_container']['countrylist']) ? $form_values[$index][$field . '_container']['countrylist'] : FALSE;
+      $country = array();
+      $country[$parent_tid] = $parent_tid;
+      $parent_value = _array_intersect($my_tids, $country);
+
+//TODO: Improve this section by calling an iteration that automatically adds as
+// many values as needed.
+      $parent_tid = isset($form_values[$index][$field . '_container']['countrylist']) ?
+          $form_values[$index][$field . '_container']['countrylist'] :
+          FALSE;
+
+
+      $user_children = $user;
+      $remove_ids_from_user = $target_user;
+      $my_sectiontids = workbench_access_get_user_tree($user_children);
+
+      foreach ($my_sectiontids as $sectid) {
+        if ($sectid['depth'] == 2) {
+          $sectids[$sectid['access_id']] = $sectid['name'];
+        }
+      }
+
+      $workbench_access_allowed_tids = workbench_access_get_user_tree($remove_ids_from_user);
+
+      foreach ($workbench_access_allowed_tids as $tid) {
+        if ($tid['depth'] == 2 && ($tid['parent'] == $parent_tid)) {
+          $tids[$tid['access_id']] = $tid['name'];
+        }
+      }
+
+      $remove_ids = $tids;
+
+      $children = $parent_tid !== FALSE ?
+          _get_workbench_access_tids_children($user_children, $parent_tid, 1) :
+          FALSE;
+
+      if ($field == 'add') {
+        if (!empty($remove_ids)) {
+          foreach ($remove_ids as $tid => $value) {
+            if (isset($children[$tid])) {
+              unset($children[$tid]);
+            }
+          }
+        }
+      }
+
+      if ($field == 'remove') {
+        $new_children = array();
+        if (!empty($remove_ids)) {
+          foreach ($remove_ids as $tid => $value) {
+            if (isset($children[$tid]) && !isset($workbench_access_allowed_tids[$parent_tid])) {
+              $new_children[$tid] = $children[$tid];
+            }
+          }
+        }
+        $children = $new_children;
+      }
+
+
+
+      $children[0] = 'None';
+      ksort($children);
+      $children_data = _get_children_element($children, $field, 'Section', FALSE);
+      if ($children_data && $parent_tid != 0) {
+        $form[$index][$field . '_container']['sectionlist'] = $children_data;
+        $form[$index][$field . '_container']['sectionlist']['#attributes'] = array(
+          'class' => array('chosen-widget'),
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Same as PHP _array_intersect, but faster.
+ * @param array $array1 The array with master values to check.
+ * @param array $array2 An array to compare values against.
+ * @return array an array containing all of the values in array1 whose values exist in all of the parameters
+ * or FALSE if one of the elements is not an array.
+ */
+function _array_intersect($array1, $array2) {
+  if (!is_array($array1) || !is_array($array2)) {
+    return FALSE;
+  }
+  $array_intersect = array();
+  foreach ($array2 as $key => $value) {
+    if (isset($array1[$key])) {
+      $array_intersect[$key] = $array1[$key];
+    }
+  }
+  return $array_intersect;
+}
+
+/**
+ * facilitates the creation of new select boxes.
+ * @param $children	 the array of children to set in the options array.
+ * @param $field	 a flag to scope the elements usually 'add' or 'remove'
+ * @param $level	 the level being generated, section or sub-section
+ * @return array	 the element object to be added to the form.
+ */
+function _get_children_element($children, $field, $level, $required) {
+  global $user;
+  ksort($children);
+  if ($children === FALSE) {
+    return FALSE;
+  }
+
+  if (count($children) === 1) {
+    return array(
+      '#markup' => t('No %l Available', array('%l' => $level)),
+      '#title' => t('Select %l', array('%l' => $level)),
+      '#prefix' => '<div id="' . drupal_strtolower($level) . '-choices-' . $field . '">',
+      '#suffix' => '</div>',
+    );
+  }
+
+
+  if (in_array('super_user', $user->roles)) {
+    $required = FALSE;
+  }
+  else {
+    $required = TRUE;
+  }
+
+
+  if ($required) {
+    unset($children[0]);
+  }
+
+
+
+  $last_level = strcmp('section', drupal_strtolower($level)) === 0;
+  $element = array(
+    '#type' => 'select',
+    '#title' => t('Select %l', array('%l' => 'Category')),
+    '#prefix' => '<div id="' . drupal_strtolower($level) . '-choices-' . $field . '">',
+    '#suffix' => '</div>',
+    '#options' => $children,
+    '#required' => $required,
+    '#multiple' => $last_level,
+    '#ajax' => array(
+      'callback' => 'selection_choice_js',
+      'wrapper' => 'selection-choices-' . $field,
+      'event' => 'change',
+      'effect' => 'fade',
+    )
+  );
+  return $element;
+}
+
+/**
+ * get the container elements for the UI
+ * @param array $form the form to work with.
+ * @param array $form_values the form values to work with.
+ * @return array returns the correct container element for the dropdown menus.
+ */
+function selection_choice_js(&$form, $form_state) {
+  $add_remove = strrpos($form_state['triggering_element']['#id'], 'add');
+  return $add_remove ?
+      $form['add_user_info']['add_container'] :
+      $form['remove_user_info']['remove_container']
+  ;
+}
+
+/**
+ * Implements form_submit hook.
+ * @param array $form the form to work with.
+ * @param array $form_values the form values to work with.
+ * @return type
+ */
+function ge_role_delegation_form_submit($form, &$form_state) {
+  global $user;
+  $form_values = $form_state;
+  $op = $form_values['clicked_button']['#value'];
+  $target_user = _get_target_user_by_name($form_state['values']['user_fields']['find_user']);
+  $uid_and_op = !is_numeric($target_user->uid);
+
+  if ($uid_and_op) {
+    return $form;
+  }
+
+  if (empty($target_user) && in_array('super_user', $user->roles)) {
+    $user_id = _get_target_user_by_name($form_state['values']['user_fields']['find_user'], TRUE);
+    $target_user = user_load($user_id->uid);
+  }
+
+  if ($op == 'Save') {
+    $terms_to_add = _get_values_to_save($form_state);
+    $add_case = _get_cases('add', $form_state);
+    if (!empty($add_case)) {
+      _save_user_configuration('add', $target_user->uid, $terms_to_add, $add_case);
+      _ge_update_country($target_user);
+    }
+
+    $terms_to_remove = _get_values_to_remove($form_state);
+    $remove_case = _get_cases('remove', $form_state);
+    if (!empty($remove_case)) {
+      _save_user_configuration('remove', $target_user->uid, $terms_to_remove, $remove_case);
+      _ge_update_country($target_user);
+    }
+
+    if (empty($add_case) && empty($remove_case)) {
+      drupal_set_message(t('Select proper Portal/Categories to assign or remove'), 'error');
+    }
+  }
+  if ($op == 'Cancel') {
+    drupal_goto();
+  }
+  if ($op == 'Inactive') {
+    if (!empty($target_user)) {
+      user_save($target_user, array('status' => 0));
+    }
+  }
+  if ($op == 'Unblock') {
+    if (!empty($target_user)) {
+      user_save($target_user, array('status' => 1));
+    }
+  }
+}
+
+/**
+ * Fetched the list of elements to be removed from the taget user.
+ * @param array $form_values an array containing the current from_state values.
+ * @return array an array with the values to be remove.
+ */
+function _get_values_to_remove($form_state) {
+  $fields = array('remove');
+  $values = $form_state['values'];
+  $user_values = array();
+  foreach ($fields as $field) {
+    foreach ($values[$field . '_user_info'][$field . '_container'] as $key => $val) {
+      $terms_to_remove[$field][$key] = $val;
+    }
+  }
+  return $terms_to_remove;
+}
+
+/**
+ * Gets the latest element added to the add_content container and returns the proper
+ * case (country, section or subsection).
+ * @param string $field a flag with add or remove.
+ * @param array $form_state the form sate.
+ * @return string the proper case according to the values in the user container.
+ */
+function _get_cases($field, $form_state) {
+  $case = '';
+  $index = $field . '_user_info';
+  $container = $field . '_container';
+  $level = $form_state['values'][$index][$container];
+
+  if (!isset($form_state['values'][$index][$container])) {
+    return '';
+  }
+  foreach ($level as $cases => $values) {
+    if ($values != 0 && (count($values) != 0)) {
+      $case = $cases;
+    }
+  }
+
+  return preg_replace('/list/', '', $case);
+}
+
+/**
+ * retrieves the values to be saved into the DB for delete and add.
+ * @param array $form_state the current form state array with the add and/or delete values
+ * @return type an array with all the values to save in the propper key (add or delete)
+ */
+function _get_values_to_save($form_state) {
+  $fields = array('add');
+  $values = $form_state['values'];
+  $user_values = array();
+  foreach ($fields as $field) {
+    foreach ($values[$field . '_user_info'][$field . '_container'] as $key => $val) {
+      $user_values[$field][$key] = $val;
+    }
+  }
+  return $user_values;
+}
+
+/**
+ * Adds the given terms to the user based on the case and the user's current permissions.
+ * @param array $term_ids an array with the terms to be saved.
+ * @param int $user_to_save the user id for which the values will be added.
+ * @param string $case a flag to determine the case (country, section, subsection, etc)
+ * @return boolean TRUE if succesfully inseted a value, FALSE otehrwise.
+ */
+function _add_user_terms($term_ids, $user_to_save, $case) {
+
+  global $user;
+  $user_load = user_load($user_to_save);
+  $permissions = _get_workbench_access_tids($user_load, 'menu', $case);
+  $current_user_permissions = _get_workbench_access_tids($user, 'menu', $case);
+
+  if (!is_array($term_ids) && $term_ids > 0) {
+    $term_object = taxonomy_term_load($term_ids);
+    try {
+      workbench_access_user_section_save($user_to_save, $term_ids, 'taxonomy');
+      drupal_set_message(t('Saved Term "%t" for %u', array(
+        '%t' => $term_object->name,
+        '%u' => $user_load->name)
+      ));
+    }
+    catch (Exception $e) {
+      drupal_set_message(t('%t is Already in %u scope', array(
+        '%t' => $term_object->name,
+        '%u' => $user_load->name)
+      ));
+    }
+
+    return TRUE;
+  }
+  if (is_array($term_ids)) {
+    foreach ($term_ids as $term_id => $val) {
+      $term_object = taxonomy_term_load($term_id);
+       if ($term_id > 0) {
+        try {
+          workbench_access_user_section_save($user_to_save, $term_id, 'taxonomy');
+          drupal_set_message(t('Saved Term "%t" for %u', array('%t' => $term_object->name,
+            '%u' => $user_load->name)
+          ));
+        }
+        catch (Exception $e) {
+          drupal_set_message(t('%t is Already in %u scope', array('%t' => $term_object->name,
+            '%u' => $user_load->name)
+          ));
+        }
+      }
+    }
+
+    return TRUE;
+  }
+  return FALSE;
+}
+
+function _ge_update_country($user_load) {
+  $vocab_menu = _get_vocabulary_by_machinename('Menu');
+  $vocab_country = _get_vocabulary_by_machinename('Country');
+  $menu_tree = taxonomy_get_tree($vocab_menu->vid);
+  $country_tree = taxonomy_get_tree($vocab_country->vid);
+  $country_final = array();
+  foreach ($menu_tree as $term) {
+    if ($term->depth === 0) {
+      $countries[$term->tid] = $term->name;
+    }
+    if ($term->depth === 1) {
+      $section[$term->tid] = $term->name;
+    }
+    if ($term->depth === 2) {
+      $sub_section[$term->tid] = $term->name;
+    }
+  }
+
+  $target_user = user_load($user_load->uid);
+  $target_all_target_ids = workbench_access_get_user_tree($target_user);
+
+  foreach ($target_all_target_ids as $key => $value) {
+    if (isset($section[$key])) {
+      $country_tid_key = $value['parent'];
+      $country_total[$country_tid_key] = $countries[$country_tid_key];
+    }
+    if (isset($countries[$key])) {
+      $country_total[$key] = $value['name'];
+    }
+  }
+
+  foreach ($country_tree as $country) {
+    $country_tid[$country->tid] = $country->name;
+  }
+  foreach ($country_total as $key => $name) {
+    $key = array_search($name, $country_tid);
+    if ($key) {
+      $country_final[]['tid'] = $key;
+    }
+  }
+  $edit = array();
+  $edit['field_country'][LANGUAGE_NONE] = $country_final;
+  $edit['field_default_country'][LANGUAGE_NONE][0]['tid'] = $country_final[0]['tid'];
+  user_save($user_load, $edit);
+}
+
+/**
+ * Removes the given terms to the user based on the case and the user's current permissions.
+ * @param array $term_ids an array with the terms to be saved.
+ * @param int $user_to_save the user id for which the values will be removed.
+ * @param string $case a flag to determine the case (country, section, subsection, etc)
+ * @return boolean TRUE if succesfully removed a value, FALSE otehrwise.
+ */
+function _remove_userterms($term_ids, $user_to_save, $case) {
+  $access_scheme = variable_get('workbench_access');
+  $user_to_load = user_load($user_to_save);
+  if (is_array($term_ids)) {
+    foreach ($term_ids as $tid => $value) {
+      workbench_access_user_section_delete($user_to_save, $tid, $access_scheme);
+      $term_object = taxonomy_term_load($tid);
+      drupal_set_message(t('Scope removed @term  from user- @user', array('@term' => $term_object->name, '@user' => $user_to_load->name
+      )));
+    }
+  }
+  else {
+    workbench_access_user_section_delete($user_to_save, $term_ids, $access_scheme);
+    $term_object = taxonomy_term_load($term_ids);
+    drupal_set_message(t('Scope removed @term  from user- @user', array('@term' => $term_object->name, '@user' => $user_to_load->name
+    )));
+  }
+}
+
+/**
+ * Stores the user's configuratioin in the DB.
+ * @param string $add_remove a flag to add or remove the term ids.
+ * @param $object $user_to_save the user that will be modified.
+ * @param array $user_values the values to be saved for the user.
+ * @param string $case the level to be saved Country, section or subsection.
+ * @return boolean TRUE on success, FALSE otherwise.
+ */
+function _save_user_configuration($add_remove, $user_to_save, $user_values, $case) {
+
+  $hierarchy = array(
+    'subsectionlist' => 'sectionlist',
+    'sectionlist' => 'countrylist',
+    'countrylist' => '',
+  );
+  $return = FALSE;
+  $terms = FALSE;
+  $pre_terms = isset($user_values[$add_remove][$case . 'list']) ?
+      $user_values[$add_remove][$case . 'list'] : FALSE;
+
+  if ($pre_terms !== FALSE) {
+    $terms = $pre_terms;
+  }
+
+  if ($add_remove == 'add' && !empty($terms)) {
+    $return = _add_user_terms($terms, $user_to_save, $case . 'list');
+  }
+
+
+  if ($add_remove == 'remove' && !empty($terms)) {
+    _remove_userterms($terms, $user_to_save, $case);
+  }
+  return $return;
+}
+
+/**
+ * delets all the given children elements.
+ * @param array $children an array with the elements to delete.
+ * @param object $user_id the user to delete this permissions from.
+ */
+function _delete_all_subsections($children, $user_id) {
+  if (isset($children[0])) {
+    unset($children[0]);
+  }
+  foreach ($children as $child => $name) {
+    workbench_access_user_section_delete($user_id, $child, 'taxonomy');
+  }
+}
+
+/**
+ * Gets the user's taxonomy terms for which he/she has access to.
+ * @param object $user the user to be tested.
+ * @param string $voc the vocabulary to be compared to.
+ * @param array $parents an array containing the parent terms to check the children for.
+ * @return array an array containing the allowed terms for the user.
+ */
+function _get_workbench_access_tids($user, $voc, $parents) {
+  $workbench_access_get_user_tree = function_exists('workbench_access_get_user_tree');
+  $workbench_access = variable_get('workbench_access') == 'taxonomy';
+  $cases = array(
+    'country' => array(
+      'depth' => 1,
+      'voc' => 'menu'
+    ),
+    'section' => array(
+      'depth' => 2,
+      'voc' => 'menu'
+    ),
+    'subsection' => array(
+      'depth' => 3,
+      'voc' => 'menu'
+    ),
+  );
+// If the Workbench Access module is installed, honor its term permissions.
+  if ($workbench_access_get_user_tree && $workbench_access) {
+// Get vocabulary machine name from first term.
+    return _get_workbench_access_tids_parents($user, $cases, $parents, $voc);
+  }
+  return array();
+}
+
+/**
+ * returns an array containing the parents available to assign permissions to.
+ * @param object $user the user object for whom the term ids will be loaded.
+ * @param array $cases the cases array object to check the information for.
+ * @param string $parents the key index to check in the cases.
+ * @param string $voc teh vocabulary to search in.
+ * @return array an array containing the tids for gthe given user.
+ */
+function _get_workbench_access_tids_parents($user, $cases, $parents, $voc) {
+  $tids = array();
+  $workbench_access_allowed_tids = workbench_access_get_user_tree($user);
+  foreach ($workbench_access_allowed_tids as $tid) {
+    $valid_case = isset($cases[$parents]) ? $cases[$parents] : FALSE;
+    if ($valid_case && _check_case($valid_case, $voc, $tid['depth'])) {
+      $tids[$tid['access_id']] = $tid['name'];
+    }
+  }
+  return $tids;
+}
+
+/**
+ * validates if the given depth and vocabulary matches the search criteria.
+ * @param array $case an array containing the filter criteria.
+ * @param type $voc the vocabulary to search in.
+ * @param type $depth
+ * @return boolean TRUE if the vocabulary and depth exit in the $case array
+ * and the vocabulary is set, or the vocabulary is not set and the depth is set
+ * the $case array, FALSE otherwise.
+ *
+ */
+function _check_case($case, $voc, $depth) {
+  $vocabulary = $case['voc'] !== '' ? $case['voc'] : FALSE;
+  if ($vocabulary) {
+    return $case['voc'] == $voc && $depth == $case['depth'];
+  }
+  else {
+    return $depth == $case['depth'];
+  }
+}
+
+/**
+ * retrieves all the children fo a given taxonomy filtered by the user's permission scope.
+ * @param obkect $user the user to fetch the permissions from.
+ * @param integer $findtid the id to fetcht eh children from.
+ * @return type an array with the ids visible for this user.
+ */
+function _get_workbench_access_tids_children($user, $findtid, $depth) {
+  $get_user_tree = function_exists('workbench_access_get_user_tree');
+  $workbench_acces_taxonomy = variable_get('workbench_access') == 'taxonomy';
+// If the Workbench Access module is installed, honor its term permissions.
+  if ($get_user_tree && $workbench_acces_taxonomy) {
+// Get vocabulary machine name from first term
+    $workbench_access_allowed_tids = workbench_access_get_user_tree($user);
+    return _get_access_allowed_tids($workbench_access_allowed_tids, $findtid, $depth);
+  }
+  return array();
+}
+
+/**
+ * Searches for the $findtid within $workbench_access_allowed_tids and return the children names and ids on success.
+ * @param array $workbench_access_allowed_tids the array of tids to search in.
+ * @param integer $findtid the id to search for.
+ * @return array and array with key value pairs containing the allowed tids from a parent term.
+ */
+function _get_access_allowed_tids($workbench_access_allowed_tids, $findtid, $depth) {
+  $taxonomy_names = array();
+
+  if ($depth == 1) {
+    foreach ($workbench_access_allowed_tids as $workbenchtid => $values) {
+      if (($values['depth'] == 2) && ($values['parent'] == $findtid)) {
+        $taxonomy_names[$workbenchtid] = $values['name'];
+      }
+    }
+
+    return $taxonomy_names;
+  }
+
+  if ($depth == 2) {
+    foreach ($workbench_access_allowed_tids as $workbenchtid => $values) {
+      if (($values['depth'] == 3) && ($values['parent'] == $findtid)) {
+        $taxonomy_names[$workbenchtid] = $values['name'];
+      }
+    }
+    ksort($taxonomy_names);
+    return $taxonomy_names;
+  }
+
+  if ($depth == 0) {
+    foreach ($workbench_access_allowed_tids as $workbenchtid => $values) {
+      if (($values['depth'] == 1)) {
+        $taxonomy_names[$workbenchtid] = $values['name'];
+      }
+    }
+    return $taxonomy_names;
+  }
+}
+
+/**
+ * function to get the autocomplete result,i am taking the user table to get the users names in the autocomplete field
+ * @param type $username
+ */
+function users_autocomplete($username = '') {
+  if ($username !== '') {
+    $matches = array();
+    $usernames = get_user_info($username);
+    if ($usernames != FALSE) {
+      foreach ($usernames as $username) {
+        $matches[$username['sso']] = $username['sso'] . '/' . $username['name'] . '/' . check_plain($username['companyname'] . '/' . $username['email']);
+      }
+    }
+    drupal_json_output($matches); //Returns the data in JSON format
+  }
+}
+
+function get_user_info($name) {
+  if (empty($name))
+    return FALSE;
+  $extra = 'email';
+  $searchkey = $name;
+  $url = variable_get('ge_lookup_services');
+  if (empty($url)) {
+    $url = 'http://services.dmt.corporate.ge.com/lookupservices';
+  }
+  $request_url = $url . '/person/' . $name . '/extra/' . $extra;
+  $options = array(
+    array('option' => CURLOPT_URL, 'value' => $request_url),
+    //array('option' => CURLOPT_HEADER, 'value' => FALSE),
+    array('option' => CURLOPT_RETURNTRANSFER, 'value' => TRUE),
+    array('option' => CURLOPT_ENCODING, 'value' => "gzip"),
+      // array('option' => CURLOPT_POST, 'value' => 1),
+      // array('option' => CURLOPT_POSTFIELDS, 'value' => $data),
+  );
+
+  $ch = curl_init();
+  foreach ($options as $option) {
+    curl_setopt($ch, $option["option"], $option['value']);
+  }
+
+  // Causes a warning if PHP safe mode is on.
+  @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, TRUE);
+  $rawdata = curl_exec($ch);
+  $responseinfo = curl_getinfo($ch);
+  $httpresponsecode = $responseinfo['http_code'];
+  if ($httpresponsecode == '200') {
+    curl_close($ch);
+    $xml = new SimpleXMLElement($rawdata, LIBXML_NOCDATA);
+    if (!empty($xml)) {
+      $attributes = $xml->services->service->response->attributes();
+      $more_data = (string) $attributes->more_data;
+      $no_result = (string) $attributes->no_result;
+      $current_page = (string) $attributes->current_page;
+      $users_list = _parse_emails($xml->services->service->response, $attributes);
+      return $users_list;
+    }
+    else
+      return FALSE;
+  }
+  else {
+    curl_close($ch);
+    return FALSE;
+  }
+}
+
+function _parse_emails($result, $attributes) {
+  if (empty($result))
+    return FALSE;
+
+  $users_list = array();
+  $more_data = (string) $attributes->more_data;
+  $no_result = (string) $attributes->no_result;
+  $current_page = (string) $attributes->current_page;
+  $result = array_filter(explode('[', $result));
+
+  foreach ($result as $value) {
+    if (preg_match_all('/"([^"]+)"/', $value, $matches)) {
+      $matches = array_pop($matches);
+      $users_list[] = array(
+        'name' => $matches[1],
+        'companyname' => $matches[2],
+        'email' => $matches[3],
+        'sso' => $matches[0]
+      );
+    }
+  }
+  return $users_list;
+}
+
+/**
+ * This function will return a vocabulary object which matches the
+ * given name. Will return null if no such vocabulary exists.
+ *
+ * @param String $vocabulary_name
+ *   This is the name of the section which is required
+ * @return Object
+ *   This is the vocabulary object with the name
+ *   or null if no such vocabulary exists
+ */
+function _get_vocabulary_by_machinename($vocabulary_name) {
+  $vocabs = taxonomy_get_vocabularies(NULL);
+  foreach ($vocabs as $vocab_object) {
+    if ($vocab_object->name == $vocabulary_name) {
+      return $vocab_object;
+    }
+  }
+  return NULL;
+}

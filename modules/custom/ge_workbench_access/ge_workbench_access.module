@@ -1,0 +1,46 @@
+<?php
+
+$_ge_workbench_access_terms = array();
+
+function ge_workbench_access_form_alter(&$form, &$form_state, $form_id) {
+    _add_selectric($form, $form_state, $form_id);
+}
+
+function _add_selectric(&$form, &$form_state, $form_id) {
+  $allowed_forms = array('generic_node_form' => true);
+  $types = node_type_get_types();
+  foreach ($types as $type) {
+    $allowed_forms[$type->type . '_node_form'] = true;
+  }
+  if (!(isset($allowed_forms[$form_id]) && isset($form['field_menu']))) {
+    return;
+  }
+  $node = $form['#node'];
+  $lang = field_language('node', $node, 'field_menu');
+  $options = $form['field_menu'][$lang]['#options'];
+  $vocabularies = taxonomy_get_vocabularies();
+  $vocabulary = FALSE;
+  foreach ($vocabularies as $id => $data) {
+    if ($data->machine_name === 'menu') {
+      $vocabulary = $id;
+      break;
+    }
+  }
+  $terms = taxonomy_get_tree($vocabulary);
+  foreach ($terms as $key => $data) {
+    if (isset($options[$data->tid])) {
+      $options[$data->tid] = str_repeat('-', $data->depth) . $data->name;
+    }
+  }
+  $form['field_menu'][$lang]['#options'] = $options;
+  if ($form['field_menu'][$lang]['#type'] === 'select') {
+    $node = $form['#node'];
+    $form['field_sectionfromtaxonomy'][$node->language]['#default_value'] = 'none';
+    $path = drupal_get_path('module', 'ge_workbench_access');
+    drupal_add_css($path . '/css/selectric.css');
+    drupal_add_css($path . '/css/ge_workbench_access.css');
+    drupal_add_js($path . '/js/jquery.min.js');
+    drupal_add_js($path . '/js/jquery.selectric.js');
+    drupal_add_js($path . '/js/ge_workbench_access.js');
+  }
+}

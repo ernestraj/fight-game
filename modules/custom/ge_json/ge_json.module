@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * @file
+ * Module for services.
+ *
+ * 
+ */
+function ge_json_menu() {
+  return array(
+    'content/jsonnode' => array(
+      'title' => t('Content'),
+      'page callback' => '_get_content_json',
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+      'file' => 'include/content.inc',
+    ),
+    'content/jsonnode/newsarticle' => array(
+      'title' => t('Content'),
+      'page callback' => '_get_newsarticle_json',
+      'delivery callback' => 'drupal_json_output',
+      'access callback' => TRUE,
+      'file' => 'include/newsarticle.inc',
+    ),
+    'content/jsonnode/policies' => array(
+      'title' => t('Policy and Procedures Content'),
+      'page callback' => '_get_policies_json',
+      'delivery callback' => 'drupal_json_output',
+      'access callback' => TRUE,
+      'file' => 'include/policies.inc',
+    ),
+     'content/jsonnode/tour' => array(
+      'title' => t('Tour'),
+      'page callback' => '_get_tour_json',
+      'delivery callback' => 'drupal_json_output',
+      'access callback' => TRUE,
+      'file' => 'include/tour.inc',
+    ),
+    'content/jsonnode/file-access' => array (
+      'title' => 'File Access',
+      'page callback' => '_ge_json_file_access_endpoint',
+      'delivery callback' => 'drupal_json_output',
+      'access callback' => TRUE,
+      'file' => 'include/file_access.inc',
+    ),
+    'content/jsonnode/policies-tree' => array(
+      'title' => t('Policy and Procedures Tree'),
+      'page callback' => '_get_policies_json_tree',
+      'delivery callback' => 'drupal_json_output',
+      'access callback' => TRUE,
+      'file' => 'include/policies.inc',
+    ),
+    'content/jsonnode/mml' => array(
+      'title' => t('Mega menu links'),
+      'page callback' => '_get_mml_json',
+      'delivery callback' => 'drupal_json_output',
+      'access callback' => TRUE,
+      'file' => 'include/mml.inc',
+    ),
+  );
+}
+
+
+/**
+ * Implementation of hook_theme()
+ */
+function ge_json_theme() {
+  return array(
+    'generic_json' => array(
+      'template' => 'templates/generic_json',
+      'variables' => array('params' => NULL),
+    ),
+    'url_json' => array(
+      'template' => 'templates/url_json',
+      'variables' => array('params' => NULL)
+    ),
+    'doc_json' => array(
+      'template' => 'templates/doc_json',
+      'variables' => array('params' => NULL)
+    ),
+    'error_json' => array(
+      'template' => 'templates/error_json',
+      'variables' => array('params' => NULL)
+    ),
+    'article_json' => array(
+      'template' => 'templates/article_json',
+      'variables' => array('params' => NULL)
+    ),
+  );
+}

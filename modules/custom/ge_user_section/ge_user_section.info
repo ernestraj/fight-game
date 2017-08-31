@@ -1,0 +1,11 @@
+name = "ge user section"
+description = "A views filter, allowing views filter by user"
+dependencies[] = views
+files[] = includes/ge_user_section_handler_field_section_info.inc
+files[] = ge_user_section.views.inc
+core = 7.x
+
+
+
+
+

@@ -1,0 +1,1445 @@
+<?php
+
+/**
+ * Implements hook_menu
+ */
+function ge_search_menu () {
+  $items = array();
+  $items['ge-search'] = array(
+    'title' => 'GE Search Page',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('search_batch_form'),
+    'access arguments' => array('access content'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/config/ge-search/settings'] = array(
+    'title' => 'GE Search Settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ge_search_cron_form'),
+    'access arguments' => array('access content'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Batch form for indexing CMS content
+ */
+function search_batch_form() {
+  $form = array();
+  $options = _get_published_nid();
+  $processed_nodes = _get_searched_processed_nodes();
+  $form['node_to_process'] = array(
+    '#title' => "Node Id's in system",
+    '#type' => 'select',
+    '#options' => $options,
+    '#multiple' => TRUE,
+    '#attributes' => array(
+      'class' => array('chosen-widget'),
+     ),
+  );
+  $form['delete_nodes'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Delete nodes from search table'),
+  );
+  $form['processed_nodes'] = array(
+    '#title' => 'Processed Nodes',
+    '#type' => 'select',
+    '#options' => $processed_nodes,
+  );
+  $form['indexing'] = array(
+    '#title' => 'Actions to be performed',
+    '#type' => 'select',
+    '#options' => array('index' => 'Index', 'delete' => 'Delete'),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit', 
+    '#value' => t('Click here to Start')
+  );
+
+  return $form;
+}
+
+/**
+ * get all pubslished nodes in search form
+ */
+function _get_published_nid() {
+  $query = db_select('node', 'n')
+    ->fields('n', array('nid'))
+    ->condition('status', 1);
+
+  $result = $query->execute()->fetchAll();
+
+  $nodes = array();
+
+  foreach($result as $item) {
+    $nodes[$item->nid] = $item->nid;
+  }
+  
+  return $nodes;
+}
+
+/**
+ * get all nodes which have been indexed.
+ */
+function _get_searched_processed_nodes() {
+  $query = db_select('ge_data_search', 'search')
+    ->fields('search', array('pageid'))
+    ->isNull('search.expired')
+    ->orderBy('pageid');
+
+  $result = $query->distinct()->execute()->fetchAll();
+
+  $nid = array();
+  foreach($result as $item) {
+    $id = explode(".", $item->pageid);
+    if(!in_array($id[0], $nid))
+      $nid[$id[0]] = $id[0];
+  }
+
+  return $nid;
+}
+
+/**
+ * Submit handler for search form.
+ */
+function search_batch_form_submit($form, $form_state) {
+  if($form_state['values']['indexing'] == 'index') {
+    foreach($form_state['values']['node_to_process'] as $key=>$value) {
+      $operations[] = array('search_batch_process', array($value)); // operation with argument
+    }
+
+    //Define your batch operation here
+    $batch = array(
+      'title' => t('Batch operation process'),
+      'operations' => $operations,
+      'finished' => 'ge_search_build_batch_finished',
+      'init_message' => t('Initializing...'),
+      'progress_message' => t('Opertation @current out of @total.'),
+      'error_message' => t('Found some error here.'),
+      'file' => drupal_get_path('module', 'ge_search') . '/ge_search.batch.inc',
+    );
+    batch_set($batch);
+  }
+  elseif($form_state['values']['indexing'] == 'delete') {
+    $delete_nids = explode(',', $form_state['values']['delete_nodes']);
+    foreach($delete_nids as $key=>$value)
+      $operations[] = array('search_delete_batch_process', array($value)); // operation with argument
+
+    $batch = array(
+      'title' => t('Batch operation process'),
+      'operations' => $operations,
+      'finished' => 'ge_search_delete_batch_finished',
+      'init_message' => t('Initializing...'),
+      'progress_message' => t('Opertation @current out of @total.'),
+      'error_message' => t('Found some error here.'),
+      'file' => drupal_get_path('module', 'ge_search') . '/ge_search.batch.inc',
+    );
+    batch_set($batch);
+  }
+}
+
+/**
+ * Records deletion from search table.
+ */
+function ge_search_delete_records($nid) {
+  if (strpos($nid, 'section') !== false) {
+    $string = explode('-', $nid);
+    _update_search_section_expire($string[0]);
+  }
+  else {
+    _update_search_expire($nid);
+  }
+}
+
+function _update_search_expire($id) {
+  $num_updated = db_update('ge_data_search') // Table name no longer needs {}
+    ->fields(array(
+      'expired' => REQUEST_TIME
+    ))
+    ->condition('pageid', $id . '.%', 'like')
+    ->execute();
+
+  $num_updated = db_update('ge_data_search') // Table name no longer needs {}
+    ->fields(array(
+      'expired' => REQUEST_TIME
+    ))
+    ->condition('pageid', $id, 'like')
+    ->execute();
+}
+
+function _update_search_section_expire($id) {
+  $num_updated = db_update('ge_data_search') // Table name no longer needs {}
+    ->fields(array(
+      'expired' => REQUEST_TIME
+    ))
+    ->condition('pageid', '%.' . $id . '.%', 'like')
+    ->condition('node_type', 'section')
+    ->execute();
+
+}
+
+/**
+ * node insert function for each type
+ * @nid node id of node for which 
+ * content needs to inserted in search 
+ * table
+ */
+function ge_search_node_type($nid) {
+  $indexed = FALSE;
+  $node = node_load($nid);
+  $tnid = $node->tnid;
+  if($tnid != 0) {
+    $nids = translation_node_get_translations($tnid);
+    foreach($nids as $item) {
+      $node = node_load($item->nid);
+      $indexed = ge_process_search_nodes($node);
+    }
+  }
+  else
+    $indexed = ge_process_search_nodes($node);
+
+  return $indexed;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function ge_search_form_alter(&$form, &$form_state, $form_id) {
+  switch($form_id) {
+    case 'views_form_sidebar_page_1':
+      $form['#submit'][] = 'node_weight_update';
+      break;
+  }
+}
+
+/**
+ * Form submit handler for
+ * updating weight of node.
+ */
+function node_weight_update($form, &$form_state) {
+  $queue = DrupalQueue::get('search_index');
+  foreach($form_state['values']['nids'] as $nid) {
+    $queue->createItem($nid);
+  }
+}
+
+/**
+ * index node on the basis of type of node
+ * @node node object
+ */
+function ge_process_search_nodes($node) {
+  $type = $node->type;
+  switch($type) {
+    case 'add_page':
+      $indexed = ge_process_add_page_nodes($node);
+      break;
+      
+    case 'news_article':
+      $indexed = ge_process_news_article_nodes($node);
+      break;
+
+    case 'section':
+      $indexed = ge_process_section_nodes($node);
+      break;
+
+    case 'link_to_a_document':
+      $indexed = ge_process_link_to_a_document_node($node);
+      break;
+ 
+    case 'multisite':
+      $indexed = ge_process_multisite_node($node);
+      break;
+
+    case 'create_links':
+      $indexed = ge_process_create_links_node($node);
+	  
+    case 'promote_link_in_search':
+      $indexed = ge_process_promote_link_in_search($node);
+  }
+  return $indexed;
+}
+
+/**
+ * function to index nodes for
+ * promote link in search
+ */
+function ge_process_promote_link_in_search($node) {
+  ge_search_delete_records($node->nid);
+  $title = $node->title;
+  $key = $node->nid;
+  $language = $node->language;
+  $node_type = $node->type;
+  $weight = $node->weight_weight;
+  $promoted = 1;
+  if(!empty($node->field_country))
+    $country = _get_taxonomy_name($node->field_country['und']);
+
+  if(!empty($node->field_tags))
+    $tags = _get_taxonomy_name($node->field_tags['und']);
+
+  $published_date = $node->changed;
+
+  $roles = $node->field_self_service_roles;
+  $function = $node->field_function;
+  $location = $node->field_location;
+  $business = $node->field_business;
+  $band = $node->field_band;
+  $targeting = _get_group_targeting($roles, $business, $function, $location, $band, array());
+
+  $text = $node->body['und'][0]['safe_value'];
+
+  $path = $node->field_url['und'][0]['url'];
+
+  $output = _get_table_rows($key, $title, $text, $targeting, $tags, $country[0], $language, $published_date, $path, $weight, '', $node_type, NULL, $promoted);
+
+  return $output;
+}
+
+/**
+ * function to index nodes for link to a page
+ */
+function ge_process_create_links_node($node) {
+  ge_search_delete_records($node->nid);
+  $title = $node->title;
+  $key = $node->nid;
+  $type = 20;
+  $ppcategory = '';
+  $language = $node->language;
+  $node_type = $node->type;
+  if(!empty($node->field_country))
+    $country = _get_taxonomy_name($node->field_country['und']);
+
+  if(!empty($node->field_tags))
+    $tags = _get_taxonomy_name($node->field_tags['und']);
+
+  $published_date = $node->changed;
+
+  $roles = $node->field_self_service_roles;
+  $function = $node->field_function;
+  $location = $node->field_location;
+  $business = $node->field_business;
+  $band = $node->field_band;
+  $targeting = _get_group_targeting($roles, $business, $function, $location, $band, array());
+
+  if(!empty($node->field_policy_category))
+    $ppcategory = $node->field_policy_category['und'][0]['tid'];
+
+  if(!empty($node->field_urls)) {
+    foreach($node->field_urls['und'] as $item) {
+      $url = field_collection_item_load($item['value']);
+      $indexed = _get_group_url($url, $key, $title, $targeting, $tags, $country[0], $language, $published_date, $type, $ppcategory, $node_type);
+    }
+  }
+
+  return $output;
+}
+
+function _get_group_url($url, $key, $title, $targeting, $tags, $country, $language, $published_date, $type, $ppcategory, $node_type) {
+  $text = '';
+  if(empty($title) && !empty($url->field_url['und'][0]['title']))
+    $title = $url->field_url['und'][0]['title'];
+  
+  $id = $key . '.' . $url->item_id;
+  
+  if(!empty($url->field_url))
+    $path = $url->field_url['und'][0]['url'];
+
+  $roles = $url->field_self_service_roles;
+  $function = $url->field_function;
+  $location = $url->field_location;
+  $business = $url->field_business;
+  $band = $url->field_band;
+  $url_targeting = _get_group_targeting($roles, $business, $function, $location, $band, $targeting);
+
+
+  $output = _get_table_rows($id, $title, $text, $url_targeting, $tags, $country, $language, $published_date, $path, $type, $ppcategory, $node_type);
+
+  return $output;
+}
+
+/**
+ * Function to index every multisite node.
+ * @node node object.
+ */
+function ge_process_multisite_node($node) {
+  ge_search_delete_records($node->nid);
+  $title = $node->title;
+  $language = $node->language;
+  $type = 10;
+  $node_type = $node->type;
+  if(!empty($node->field_country))
+    $country = _get_taxonomy_name($node->field_country['und']);
+
+  if(!empty($node->field_tags))
+    $tags = _get_taxonomy_name($node->field_tags['und']);
+
+  $roles = $node->field_self_service_roles;
+  $function = $node->field_function;
+  $location = $node->field_location;
+  $business = $node->field_business;
+  $band = $node->field_band;
+  $targeting = _get_group_targeting($roles, $business, $function, $location, $band, array());
+  $key = $node->nid;
+
+  $published_date = $node->changed;
+
+  if(!empty($node->field_link_type_new)) {
+    foreach($node->field_link_type_new['und'] as $item) {
+      $link = field_collection_field_get_entity($item);
+      $output = _get_group_links($link, $title, $targeting, $key, $tags, $country[0], $language, $published_date, $type, '', $node_type);
+    }
+  }
+
+  return $output;
+}
+
+/**
+ * function to index link to document node type
+ * @node node object.
+ */
+function ge_process_link_to_a_document_node($node) {
+  ge_search_delete_records($node->nid);
+  $ppcategory = '';
+  $title = $node->title;
+  $language = $node->language;
+  $text = '';
+  $type = 20;
+  $node_type = $node->type;
+
+  if(!empty($node->field_country))
+    $country = _get_taxonomy_name($node->field_country['und']);
+
+  if(!empty($node->field_tags))
+    $tags = _get_taxonomy_name($node->field_tags['und']);
+
+  $roles = $node->field_self_service_roles;
+  $function = $node->field_function;
+  $location = $node->field_location;
+  $business = $node->field_business;
+  $band = $node->field_band;
+  $targeting = _get_group_targeting($roles, $business, $function, $location, $band, array());
+
+  $key = $node->nid;
+
+  $published_date = $node->changed;
+
+  if(!empty($node->field_policy_category))
+    $ppcategory = $node->field_policy_category['und'][0]['tid'];
+
+  if(!empty($node->field_files)) {
+    foreach($node->field_files['und'] as $item) {
+      $file = field_collection_field_get_entity($item);
+      $output = _get_group_files($file, $targeting, $key, $tags, $country[0], $language, $published_date, $type, $ppcategory, $title, $node_type);
+    }
+  }
+
+  return $output;
+}
+
+/**
+ * single function to index search node
+ * @file fielcollection object
+ * @text body text used within node
+ * @targeting targeted entity
+ * @key unique key identifier
+ * @tags used which will be helpful in search
+ * @country to which node belongs to
+ * @language of node
+ * @published_date when was the node published
+ */
+function _get_group_files($file, $targeting, $key, $tags, $country, $language, $published_date, $type, $ppcategory, $title = '', $node_type) {
+  $file_key = $key . '.' . $file->item_id;
+
+  $roles = $file->field_self_service_roles;
+  $function = $file->field_function;
+  $location = $file->field_location;
+  $business = $file->field_business;
+  $band = $file->field_band;
+  $file_targeting = _get_group_targeting($roles, $business, $function, $location, $band, $targeting);
+  if(!empty($file->field_document))
+    $output = _get_file_rows($file->field_document['und'], $file_key, $file_targeting, $tags, $country, $language, $published_date, $type, $ppcategory, $title, $node_type);
+
+  return $output;
+}
+
+/**
+ * function to insert news article node
+ * @node argument which needs to be processed
+ */
+function ge_process_news_article_nodes($node) {
+  $text = '';
+  $tags = array();
+  $expired = NULL;
+  ge_search_delete_records($node->nid);
+  $title = $node->title;
+  $language = $node->language;
+  $type = 10;
+  $node_type = $node->type;
+  if(!empty($node->field_description)) {
+    $text .= $node->field_description['und'][0]['safe_value'];
+    if(!empty($node->field_description['und'][0]['safe_summary']))
+      $text .= $node->field_description['und'][0]['safe_summary'];
+  }
+  if(!empty($node->field_country))
+    $country = _get_taxonomy_name($node->field_country['und']);
+
+  if(!empty($node->field_tags))
+    $tags = _get_taxonomy_name($node->field_tags['und']);
+
+  $roles = $node->field_self_service_roles;
+  $function = $node->field_function;
+  $location = $node->field_location;
+  $business = $node->field_business;
+  $band = $node->field_band;
+  $targeting = _get_group_targeting($roles, $business, $function, $location, $band, array());
+
+  $key = $node->nid;
+
+  $published_date = $node->changed;
+  $expired = '';
+  if(!empty($node->field_news_end_date))
+    $expired = $node->field_news_end_date['und'][0]['value'];
+
+  $output = _get_table_rows($key, $title, $text, $targeting, $tags, $country[0], $language, $published_date, '', $type, '', $node_type, $expired);
+
+  if(!empty($node->field_link_type_new)) {
+    foreach($node->field_link_type_new['und'] as $item) {
+      $link = field_collection_field_get_entity($item);
+      $output = _get_group_links($link, $title, $targeting, $key, $tags, $country[0], $language, $published_date, $type, '', $node_type, $expired);
+    }
+  }
+ 
+  return $output;
+}
+
+/**
+ * Get all add page nodes where this sidebar
+ * has been referred.
+ */
+function _get_sidebar_referenced_nodes($category) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'add_page')
+    ->fieldCondition('field_menu', 'tid', $category);
+
+  $result = $query->execute();
+
+  $nids = array_keys($result['node']);
+
+  return $nids;
+}
+
+/**
+ * will process sidebar nodes to insert data
+ * in search table
+ * @node argument which needs to be processed
+ */
+function ge_process_section_nodes($node) {
+  ge_search_delete_records($node->nid . '-section');
+  $title = $node->title;
+  $language = $node->language;
+  $type = 10;
+  $node_type = $node->type;
+  if(!empty($node->field_country))
+    $country = _get_taxonomy_name($node->field_country['und']);
+
+  if(!empty($node->field_tags))
+    $tags = _get_taxonomy_name($node->field_tags['und']);
+
+  foreach($node->field_side_menu['und'] as $item)
+    $categories[] = $item['tid'];
+  
+  foreach($categories as $item)
+    $nids[] = _get_sidebar_referenced_nodes($item);
+
+  foreach($nids as $item)
+    foreach($item as $nid)
+      $nids_array[] = $nid;
+
+  $nodes = node_load_multiple($nids_array);
+  $roles = $node->field_self_service_roles;
+  $function = $node->field_function;
+  $location = $node->field_location;
+  $business = $node->field_business;
+  $band = $node->field_band;
+  $published_date = $node->changed;
+  foreach($nodes as $item) {
+    $page_title = $item->title;
+    $page_business = $item->field_business;
+    $page_function = $item->field_function;
+    $page_location = $item->field_location;
+    $page_band = $item->field_band;
+    $page_roles = $item->field_self_service_roles;
+    $page_targeting = _get_group_targeting($page_roles, $page_business, $page_function, $page_location, $page_band, array());
+    $targeting = _get_group_targeting($roles, $business, $function, $location, $band, $page_targeting);
+    $key = $item->nid . '.' . $node->nid;
+    if(!empty($node->field_section)) {
+      $section = field_collection_item_load($node->field_section['und'][0]['value']);
+      $output = _get_group_section($section, $targeting, $key, $tags, $country[0], $language, $published_date, $page_title, $type, '', '', $node_type);
+    }
+  }
+
+  return $output;
+}
+
+/**
+ * Will process add page nodes
+ * @node argument which needs to be processed
+ */
+function ge_process_add_page_nodes($node) {
+  ge_search_delete_records($node->nid);
+  $output = FALSE;
+  $tags = array();
+  $title = $node->title;
+  $text = '';
+  $type = 10;
+  $node_type = $node->type;
+  $ppcategory = '';
+
+  if(!empty($node->language))
+    $language = $node->language;
+
+  if(!empty($node->body)) {
+    $text .= $node->body['und'][0]['safe_value'];
+    if(!empty($node->body['und'][0]['safe_summary']))
+      $text .= $node->body['und'][0]['safe_summary'];
+  }
+
+  if(!empty($node->field_tags))
+    $tags = _get_taxonomy_name($node->field_tags['und']);
+
+  $roles = $node->field_self_service_roles;
+  $function = $node->field_function;
+  $location = $node->field_location;
+  $business = $node->field_business;
+  $band = $node->field_band;
+  if(!empty($node->field_country))
+    $country = _get_taxonomy_name($node->field_country['und']);
+
+  $targeting = _get_group_targeting($roles, $business, $function, $location, $band, array());
+  $key = $node->nid;
+  $published_date = $node->changed;
+
+  if(!empty($node->field_policy_category))
+    $ppcategory = $node->field_policy_category['und'][0]['tid'];
+
+  if(!empty($node->field_asset))
+    $output = _get_file_rows($node->field_asset['und'], $key, $targeting, $tags, $country[0], $language, $published_date, $type, $ppcategory, $title, $node_type);
+
+  $output = _get_table_rows($key, $title, $text, $targeting, $tags, $country[0], $language, $published_date, '', $type, $ppcategory, $node_type);
+
+  if(!empty($node->field_group)) {
+    $groups = $node->field_group['und'];
+    $output = _get_group_rows($groups, $targeting, $key, $tags, $country[0], $language, $published_date, $type, $ppcategory, $title, $node_type);
+  }
+  
+  return $output;
+}
+
+/**
+ * will be used to create rows for files
+ */
+function _get_file_rows($files, $key, $targeting, $tags, $country, $language, $published_date, $type, $ppcategory, $title = '', $node_type, $expired) {
+  global $base_url;
+  foreach($files as $item) {
+    $file_text = $item['filename'];
+    if(!empty($item['description']))
+      $title = $item['description'];
+    elseif(empty($title))
+      $title = $item['filename'];
+
+    if(!empty($item['alt']))
+      $file_text .= $item['alt'] . ' ';
+
+    if(!empty($item['title']))
+      $file_text .= $item['title'] . ' ';
+
+    if(!empty($item['uri'])) {
+      $path = str_replace("private://", "/private/", $item['uri']);
+      $type = 30;
+    }
+
+    if($item['type'] != 'image')
+      $output = _get_table_rows($key, $title, $file_text, $targeting, $tags, $country, $language, $published_date, $path, $type, $ppcategory, $node_type, $expired);
+  }
+
+  return $output;
+}
+
+/**
+ * will be used to get group rows
+ */
+function _get_group_rows($groups, $targeting, $key, $tags, $country, $language, $published_date, $type, $ppcategory, $title, $node_type) {
+  foreach($groups as $index=>$item) {
+    $group = field_collection_field_get_entity($item);
+    $output = _get_group_row($group, $targeting, $key, $tags, $country, $language, $published_date, $type, $ppcategory, $title, $node_type);
+  }
+
+  return $output;
+}
+
+/**
+ * will be used to process a single group row.
+ */
+function _get_group_row($group, $targeting, $key, $tags, $country, $language, $published_date, $type, $ppcategory = '', $title = '', $node_type) {
+  if(!empty(trim($group->field_title['und'][0]['safe_value'])))
+    $title = $group->field_title['und'][0]['safe_value'];
+
+  $text = '';
+  if(!empty($group->field_body)) {
+    $text .= $group->field_body['und'][0]['safe_value'];
+    if(!empty($body['und'][0]['safe_summary']))
+      $text .= $group->field_body['und'][0]['safe_summary'];
+  }
+
+  $group_targeting = _get_group_targeting($group->field_self_service_roles, $group->field_business, $group->field_function, $group->field_location, $group->field_band, $targeting);
+
+  $group_key = $key . '.' . $group->item_id;
+
+  if(!empty($group->field_asset))
+    _get_file_rows($group->field_asset['und'], $group_key, $group_targeting, $tags, $country, $language, $published_date, $type, $ppcategory, $title, $node_type);
+
+  if(!empty($group->field_title) || !empty($text))
+    $output = _get_table_rows($group_key, $title, $text, $group_targeting, $tags, $country, $language, $published_date, '', $type, $ppcategory, $node_type);
+
+  if(!empty($group->field_section)) {
+    foreach($group->field_section['und'] as $item) {
+      $section = field_collection_field_get_entity($item);
+      $output = _get_group_section($section, $group_targeting, $group_key, $tags, $country, $language, $published_date, $title, $type, $ppcategory, 'page', $node_type);
+    }
+  }
+
+  return $output;
+}
+
+/**
+ * will be used to process single section
+ */
+function _get_group_section($section, $group_targeting, $group_key, $tags, $country, $language, $published_date, $parent_title = '', $type, $ppcategory, $s_type, $node_type) {
+  if(!empty(trim($section->field_title['und'][0]['safe_value'])) && $s_type != 'page' && !empty(trim($parent_title)))
+    $title = $parent_title . " : " . $section->field_title['und'][0]['safe_value'];
+  elseif(!empty(trim($section->field_title['und'][0]['safe_value'])))
+    $title = $section->field_title['und'][0]['safe_value'];
+  else
+    $title = $parent_title;
+
+  $text = '';
+  if(!empty($section->field_body)) {
+    $text = $section->field_body['und'][0]['safe_value'];
+    if(!empty($body['und'][0]['safe_summary']))
+      $text .= $section->field_body['und'][0]['safe_summary'];
+  }
+
+  if(!empty($section->field_tags))
+    $section_tags = _get_taxonomy_name($section->field_tags['und']);
+
+  $roles = $section->field_self_service_roles;
+  $business = $section->field_business;
+  $function = $section->field_function;
+  $location = $section->field_location;
+  $band = $section->field_band;
+  $section_targeting = _get_group_targeting($roles, $business, $function, $location, $band, $group_targeting);
+  $section_key = $group_key . '.' . $section->item_id;
+
+  if(!empty($section->field_asset))
+    _get_file_rows($section->field_asset['und'], $section_key, $section_targeting, $tags, $country, $language, $published_date, $type, $ppcategory, $title, $node_type);
+
+  if(!empty($title) || !empty($text))
+    $output = _get_table_rows($section_key, $title, $text, $section_targeting, $section_tags, $country, $language, $published_date, '', $type, $ppcategory, $node_type);
+
+  if(!empty($section->field_link_type_new)) {
+    foreach($section->field_link_type_new['und'] as $item) {
+      $link = field_collection_field_get_entity($item);
+      $output = _get_group_links($link, $title, $section_targeting, $section_key, $tags, $country, $language, $published_date, $type, $ppcategory, $node_type);
+    }
+  }
+  
+  return $output;
+}
+
+/**
+ * will be used to process single 
+ * link/files content in a node
+ */
+function _get_group_links($link, $title, $section_targeting, $section_key, $tags, $country, $language, $published_date, $type, $ppcategory = '', $node_type, $expired) {
+  $path = '';
+
+  if(!empty(trim($link->field_title['und'][0]['safe_value'])))
+    $title = $link->field_title['und'][0]['safe_value'];
+  
+  if(!empty($link->field_existing_url)) {
+    foreach($link->field_existing_url['und'] as $item) {
+      $output = ge_search_node_type($item['target_id']);
+    }
+  }
+
+  if(!empty($link->field_description)) {
+    $body = $link->field_description['und'][0]['safe_value'];
+    if(!empty($link->field_description['und'][0]['safe_summary'])) {
+      $summary = $link->field_description['und'][0]['safe_summary'];
+    }
+  }
+
+  if(!empty($link->field_link)) {
+    $url = $link->field_link['und'][0]['url'];
+    if(!empty($link->field_link['und'][0]['title'])) {
+      $title = $link->field_link['und'][0]['title']; 
+    }
+  }
+
+  $roles = $link->field_self_service_roles;
+  $business = $link->field_business;
+  $function = $link->field_function;
+  $location = $link->field_location;
+  $band = $link->field_band;
+
+  $link_targeting = _get_group_targeting($roles, $business, $function, $location, $band, $section_targeting);
+
+  $link_key = $section_key . '.' . $link->item_id;
+
+  $text = '';
+  if(!empty($body))
+    $text .= $body . ' ';
+
+  if(!empty($summary))
+    $text .= $summary . ' ';
+
+  if(!empty($url)) 
+    $path = $url;
+  
+  if(!empty($link->field_title) || !empty($text) || !empty($path))
+    $output = _get_table_rows($link_key, $title, $text, $link_targeting, $tags, $country, $language, $published_date, $path, $type, $ppcategory, $node_type, $expired);
+
+  if(!empty($link->field_file))
+    $output = _get_file_rows($link->field_file['und'], $link_key, $link_targeting, $tags, $country, $language, $published_date, $type, $ppcategory, $title, $node_type, $expired);
+  
+  return $output;
+}
+
+function _get_roles_bflb($targeting) {
+  $roles_bfl = variable_get('roles_bfl_update_array');
+  $updated_band = array();
+  foreach($targeting['roles'] as $key=>$item) {    
+    if(isset($roles_bfl[$item])) {
+      if(!empty($roles_bfl[$item]['business']) && !in_array($roles_bfl[$item]['business'], $bfl_business))
+        $bfl_business[] = $roles_bfl[$item]['business'];
+
+      if(!empty($roles_bfl[$item]['location']) && !in_array($roles_bfl[$item]['location'], $bfl_location))
+        $bfl_location[] = $roles_bfl[$item]['location'];
+
+      if(!empty($roles_bfl[$item]['band']) && !in_array($roles_bfl[$item]['band'], $bfl_band))
+        $bfl_band[] = $roles_bfl[$item]['band'];
+    }
+  }
+
+  foreach($bfl_location as $item) {
+    $location = _get_bfl_ge_id_label($item);
+    if(!empty($location))
+      $updated_location[$location->hdepth][] = $location->name . '|' . $item;
+  }
+
+  foreach($bfl_business as $item) {
+    $business = _get_bfl_ge_id_label($item);
+    if(!empty($business))
+      $updated_business[$business->hdepth][] = $business->name . '|' . $item;
+  }
+
+  foreach($bfl_band as $item) {
+    $band = explode(',', $item);
+    $updated_band = array_merge($updated_band,$band);
+  }
+
+  $band_updated = array_unique($updated_band);
+
+  if(!empty($band_updated))
+    $result['band'] = $band_updated;
+
+  if(!empty($updated_business))
+    $result['business'] = $updated_business;
+
+  if(!empty($updated_location))
+    $result['location'] = $updated_location;
+
+  return $result;
+}
+
+function _get_bfl_ge_id_label($geid) {
+  $query = db_select('taxonomy_term_data', 't');
+  $query->innerJoin('field_data_field_geid', 'geid', 't.tid = geid.entity_id');
+  $query->fields('t', array('name','hdepth'))
+    ->condition('geid.entity_type', 'taxonomy_term')
+    ->condition('geid.field_geid_value', $geid);
+
+  $result = $query->execute()->fetchObject();
+
+  return $result;
+}
+
+function _targeting_bflb_values($targeting) {
+  $updated_roles_bfl = _get_roles_bflb($targeting);
+  if(isset($updated_roles_bfl['business'][1])) {
+    if(empty($targeting['business'][1]))
+      $targeting['business'][1] = array();
+    $targeting['business'][1] = array_unique(array_merge($updated_roles_bfl['business'][1], $targeting['business'][1]));
+  }
+
+  if(isset($updated_roles_bfl['business'][2])) {
+    if(empty($targeting['business'][2]))
+      $targeting['business'][2] = array();
+    $targeting['business'][2] = array_unique(array_merge($updated_roles_bfl['business'][2], $targeting['business'][2]));
+  }
+
+  if(isset($updated_roles_bfl['business'][3])) {
+    if(empty($targeting['business'][3]))
+      $targeting['business'][3] = array();
+    $targeting['business'][3] = array_unique(array_merge($updated_roles_bfl['business'][3], $targeting['business'][3]));
+  }
+
+  if(isset($updated_roles_bfl['location'][1])) {
+    if(empty($targeting['location'][1]))
+      $targeting['location'][1] = array();
+    $targeting['location'][1] = array_unique(array_merge($updated_roles_bfl['location'][1], $targeting['location'][1]));
+  }
+
+  if(isset($updated_roles_bfl['location'][2])) {
+    if(empty($targeting['location'][2]))
+      $targeting['location'][2] = array();
+    $targeting['location'][2] = array_unique(array_merge($updated_roles_bfl['location'][2], $targeting['location'][2]));
+  }
+
+  if(isset($updated_roles_bfl['location'][3])) {
+    if(empty($targeting['location'][3]))
+      $targeting['location'][3] = array();
+    $targeting['location'][3] = array_unique(array_merge($updated_roles_bfl['location'][3], $targeting['location'][3]));
+  }
+
+  if(isset($updated_roles_bfl['location'][4])) {
+    if(empty($targeting['location'][4]))
+      $targeting['location'][4] = array();
+    $targeting['location'][4] = array_unique(array_merge($updated_roles_bfl['location'][4], $targeting['location'][4]));
+  }
+
+  if(isset($updated_roles_bfl['band'])) {
+    if(empty($targeting['band']))
+      $targeting['band'] = array();
+    $targeting['band'] = array_unique(array_merge($updated_roles_bfl['band'], $targeting['band']));
+  }
+
+  return $targeting;
+}
+
+/**
+ * will create all combinations for bfl and roles
+ * and map content with each combination.
+ */
+function _get_table_rows($id, $title, $text, $targeting, $tags, $portal, $language, $published_date, $path, $type, $ppcategory = '', $node_type, $expired = '', $promoted = 0) {
+  $output = FALSE;
+  if(!empty($title) && !empty($text)) {
+
+    $roles = _get_targeting_value($targeting['roles']);
+
+    $targeting = _targeting_bflb_values($targeting);
+
+    $business = _get_targeting_value($targeting['business'][1]);
+    $business_segment = _get_targeting_value($targeting['business'][2]);
+    $sub_business = _get_targeting_value($targeting['business'][3]);
+    $function = _get_targeting_value($targeting['function'][1]);
+    $job_family = _get_targeting_value($targeting['function'][2]);
+    $region = _get_targeting_value($targeting['location'][1]);
+    $country = _get_targeting_value($targeting['location'][2]);
+    $state = _get_targeting_value($targeting['location'][3]);
+    $city = _get_targeting_value($targeting['location'][4]);
+    $band = _get_targeting_value($targeting['band']);
+
+    if($promoted == 1)
+      $type = _get_weight_promoted_links($id);
+	
+    if(!empty($tags)) {
+      foreach($tags as $tag) {
+        $tag_string .= $tag . ', ';
+        $tags = rtrim($tag_string, ', ');
+      }
+    }
+
+    $targeting = array(
+      'business' => $business,
+      'business_segment' => $business_segment,
+      'sub_business' => $sub_business,
+      'function' => $function,
+      'job_family' => $job_family,
+      'region' => $region,
+      'country' => $country,
+      'state' => $state,
+      'city' => $city,
+      'band' => $band,
+      'roles' => $roles,
+    );
+
+    $output = _insert_table_rows($id, $title, $targeting, $text, $tags, $portal, $language, $published_date, $path, $type, $ppcategory, $node_type, $expired, $promoted);
+  }
+
+  return $output;
+}
+
+/**
+ * Fetch weight from table directly
+ * when link is added in promoted link
+ */
+function _get_weight_promoted_links($id) {
+  $query = db_select('weight_weights', 'weight')
+    ->fields('weight', array('weight'))
+    ->condition('entity_type', 'node')
+    ->condition('entity_id', $id);
+
+  $result = $query->execute()->fetchAll();
+
+  return $result[0]->weight;
+}
+
+/**
+ * insert comma separated values for 
+ * targeting fields
+ */
+function _get_targeting_value($targeting) {
+  $string = '';
+  if(!empty($targeting)) {
+    foreach($targeting as $item)
+      $string .= $item . ',';
+  }
+  else
+    $string = 'All';
+
+  return rtrim($string, ',');
+}
+
+/**
+ * function to insert rows passed from
+ * different function to insert in 
+ * ge_data_search table.
+ */
+function _insert_table_rows($id, $title, $targeting, $text, $tags, $country, $language, $published_date, $path = '', $weight, $ppcategory, $node_type, $expired = '', $promoted = 0) {
+  $data = array();
+  $data['pageid'] = $id;
+  $data['last_updated'] = REQUEST_TIME;
+  $data['created'] = gmdate("Y-m-d\TH:i:s\Z", $published_date);
+  $replace = array('-', '_');
+
+  if(!empty($title))
+    $data['title'] = mb_convert_encoding(strip_tags($title), "UTF-8"); //utf8_encode(strip_tags(iconv("UTF-8","ISO-8859-1//IGNORE",$title)));
+
+  if(!empty($text))
+    $data['body'] = mb_convert_encoding(strip_tags($text), "UTF-8"); //utf8_encode(strip_tags(iconv("UTF-8","ISO-8859-1//IGNORE",$text)));
+
+  if(!empty($targeting['roles']))
+    $data['roles'] = $targeting['roles'];
+  else
+    $data['roles'] = 'All';
+
+  if(!empty($targeting['business']))
+    $data['business'] = $targeting['business'];
+  else
+    $data['business'] = 'All';
+
+  if(!empty($targeting['business_segment']))
+    $data['business_segment'] = $targeting['business_segment'];
+  else
+    $data['business_segment'] = 'All';
+
+  if(!empty($targeting['sub_business']))
+    $data['sub_business'] = $targeting['sub_business'];
+  else
+    $data['sub_business'] = 'All';
+
+  if(!empty($targeting['function']))
+    $data['function'] = $targeting['function'];
+  else
+    $data['function'] = 'All';
+
+  if(!empty($targeting['job_family']))
+    $data['job_family'] = $targeting['job_family'];
+  else
+    $data['job_family'] = 'All';
+
+  if(!empty($targeting['region']))
+    $data['region'] = $targeting['region'];
+  else
+    $data['region'] = 'All';
+
+  if(!empty($targeting['country']))
+    $data['country'] = $targeting['country'];
+  else
+    $data['country'] = 'All';
+
+  if(!empty($targeting['state']))
+    $data['state'] = $targeting['state'];
+  else
+    $data['state'] = 'All';
+
+  if(!empty($targeting['country']))
+    $data['city'] = $targeting['city'];
+  else
+    $data['city'] = 'All';
+
+  if(!empty($targeting['band']))
+    $data['band'] = $targeting['band'];
+  else
+    $data['band'] = 'All';
+
+  if(!empty($tags))
+    $data['tags'] = mb_convert_encoding(strip_tags($tags), "UTF-8");//utf8_encode(strip_tags(iconv("UTF-8","ISO-8859-1//IGNORE",$tags)));;
+
+  if(!empty($country))
+    $data['portal'] = $country;
+
+  if(!empty($language))
+    $data['language'] = $language;
+
+  if(!empty($path))
+    $data['path'] = $path;
+
+  if(!empty($weight))
+    $data['weight'] = $weight;
+
+  if(!empty($ppcategory))
+    $data['categoryid'] = $ppcategory;
+  else
+    $data['categoryid'] = 0;
+
+  if(!empty($expired))
+    $data['expired'] = $expired;
+  else
+    $data['expired'] = NULL;
+
+  if(!empty($node_type))
+    $data['node_type'] = $node_type;
+
+  if($promoted != 0)
+    $data['promoted'] = $promoted;
+
+  $primary_key = array('id');
+
+  $insert = _check_row_exists($data);
+
+  if($insert) {
+    $data['id'] = $insert;
+    $output = drupal_write_record('ge_data_search', $data, $primary_key);
+  }
+  else
+    $output = drupal_write_record('ge_data_search', $data);
+
+  return $output;
+}
+
+/**
+ * this will check if row exists, if exists
+ * return TRUE
+ */
+function _check_row_exists($data) {
+  $output = db_select('ge_data_search', 'search')
+    ->fields('search', array('id'))
+    ->condition('pageid', $data['pageid'])
+    ->condition('weight', $data['weight'])
+    ->condition('path', $data['path'])
+    ->execute()
+    ->fetchAll();
+
+  if(!empty($output))
+    return $output[0]->id;
+}
+
+/**
+ * Single function to get targeting for each entity.
+ */
+function _get_group_targeting($roles, $business, $function, $location, $band, $targeting) {
+  $output = array();
+  if(!empty($roles))
+    $output['roles'] = _get_taxonomy_name($roles['und']);
+  elseif(!empty($targeting['roles']))
+    $output['roles'] = $targeting['roles'];
+  else
+    $output['roles'][] = 'All';
+
+  if(!empty($business)) 
+    $output['business'] = _get_ge_id($business['und'], $targeting['business']);
+  elseif(!empty($targeting['business']))
+    $output['business'] = $targeting['business'];
+
+  if(!empty($function))
+    $output['function'] = _get_ge_id($function['und'], $targeting['function']);
+  elseif(!empty($targeting['function']))
+    $output['function'] = $targeting['function'];
+
+  if(!empty($location))
+    $output['location'] = _get_ge_id($location['und'], $targeting['location']);
+  elseif(!empty($targeting['location']))
+    $output['location'] = $targeting['location'];
+
+  if(!empty($band))
+    $output['band'] = _get_taxonomy_name($band['und'], $targeting['band']);
+  elseif(!empty($targeting['band']))
+    $output['band'] = $targeting['band'];
+
+  return $output;
+}
+
+/**
+ * Get taxonomy term name.
+ * @targeting taxonomy id array
+ */
+function _get_taxonomy_name($targeting, $par_targeting = array()) {
+  $terms = array();
+  foreach($targeting as $index=>$item) {
+    $term = taxonomy_term_load($item['tid']);
+    if($term->name != 'All')
+      $terms[$index] = $term->name;
+  }
+
+  if(empty($terms))
+    $terms = $par_targeting;
+  return $terms;
+}
+
+function _get_ge_id($targeting, $par_targeting) {
+  $terms = array();
+  foreach($targeting as $index=>$item) {
+    $term = taxonomy_term_load($item['tid']);
+    if($term->name != 'All')
+      $terms[$term->hdepth][$index] = $term->name . '|' .$term->field_geid['und'][0]['value'];
+  }
+
+  if(empty($terms))
+    $terms = $par_targeting;
+  return $terms;
+}
+
+function ge_search_cron_form($form, &$form_state) {
+  $options_cron = array(10=>10, 20=>20, 50=>50, 100=>100, 200=>200, 500=>500, 1000=>1000,3000=>3000);
+  $queue = DrupalQueue::get('search_index');
+  $form['search_index_cron'] = array(
+    '#type' => 'select',
+    '#title' => t('How many node you want to index per cron run?'),
+    '#description' => t('Indexing nodes will mean adding nodes in database, which is database intensive, make sure your server can handle large insertions.'),
+    '#options' => $options_cron,
+    '#default_value' => variable_get('node_search_index_cron'),
+  );
+  $form['run_now'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Index nodes now.'),
+    '#description' => t('This will start a batch job to Index nodes.'),
+    '#default_value' => 0,
+  );
+  $form['create_queue'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Create Queue.'),
+    '#description' => t('Checking this checkbox will create queue from fresh.'),
+    '#default_value' => 0,
+  );
+  $form['total_items_in_queue'] = array(
+    '#type' => 'markup',
+    '#title' => t('Total number of items in queue'),
+    '#markup' => '<p>Number of items in Queue: ' . $queue->numberOfItems() . '</p>',
+  );
+  $form['roles-file'] = array(
+    '#type' => 'file',
+    '#title' => t('CMS Roles update file'),
+    '#description' => t('Upload a file, allowed extensions: csv'),
+  );
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
+
+  return $form;
+}
+
+function ge_search_cron_form_validate($form, &$form_state) {
+  $roles_file = file_save_upload('roles-file', array('file_validate_extensions' => array('csv')), 'public://', FILE_EXISTS_REPLACE);
+  if ($roles_file) {
+    // Move the file into the Drupal file system.
+    if ($roles_file = file_move($roles_file, 'public://')) {
+      // Save the file for use in the submit handler.
+      $form_state['storage']['roles_file'] = $roles_file;
+    }
+    else {
+      form_set_error('roles_file', t("Failed to write the uploaded file to the site's file folder."));
+    }
+  }
+}
+
+/**
+ * Form submit handler for the settings form.
+ */
+function ge_search_cron_form_submit($form, &$form_state) {
+  variable_set('node_search_index_cron', $form_state['values']['search_index_cron']);
+  $queue = DrupalQueue::get('search_index');
+  if($form_state['values']['create_queue'] == 1) {
+    $queue->deleteQueue();
+
+    $nids = _get_published_nid();
+    $queue = DrupalQueue::get('search_index');
+    foreach($nids as $nid) {
+      $queue->createItem($nid);
+    }
+  }
+
+  $roles_bfl = array();
+  if(isset($form_state['storage']['roles_file'])) {
+    $roles_handle = fopen($form_state['storage']['roles_file']->uri, 'r');
+    while ($row = fgetcsv($roles_handle)) {
+      if(!empty($row[6]) || !empty($row[9]) || !empty($row[7]))
+      $roles_bfl[$row[0]] = array('business' => $row[6], 'location' => $row[9], 'band' => $row[7]); 
+    }
+    fclose($roles_handle);
+
+    variable_set('roles_bfl_update_array', $roles_bfl);
+  }
+
+  if ($form_state['values']['run_now'] == 1) {
+    // Set up the batch job.
+    $count = 1;
+    while($item = queue_search_claimItem('search_index')) {
+      $queue_item[] = $item;
+      $queue->deleteItem($item);
+      $count++;
+      if($count > $form_state['values']['search_index_cron']) {
+        break;
+      }
+    }
+    foreach($queue_item as $key=>$value)
+      $operations[] = array('search_batch_process', array($value->data));
+
+    $batch = array(
+      'operations' => $operations,
+      'title' => t('Batch operation process'),
+      'operations' => $operations,
+      'finished' => 'ge_search_build_batch_finished',
+      'init_message' => t('Initializing...'),
+      'progress_message' => t('Opertation @current out of @total.'),
+      'error_message' => t('Found some error here.'),
+      'file' => drupal_get_path('module', 'ge_search') . '/ge_search.batch.inc',
+    );
+    batch_set($batch);
+  }
+  drupal_set_message(t('Settings Saved Successfully.'));
+}
+
+function queue_search_claimItem($queue_name) {
+  $query = db_select('queue', 'q')
+             ->fields('q', array('item_id', 'data'))
+             ->condition('name', $queue_name)
+             ->range(0,1);
+
+  $result = $query->execute()->fetchObject();
+  
+  $result->data = unserialize($result->data);
+
+  return $result;
+}
+
+/**
+ * Overrides hook_cron_queue_info
+ */
+function ge_search_cron_queue_info() { 
+  $queues['search_index'] = array( 
+    'worker callback' => 'ge_search_node_type', // This is the callback function for each queue item. 
+    'time' => 180, // This is the max run time per cron run in seconds. 
+  );
+  $queues['search_delete_index'] = array( 
+    'worker callback' => 'ge_search_delete_records', // This is the callback function for each queue item. 
+    'time' => 180, // This is the max run time per cron run in seconds. 
+  );
+
+  return $queues; 
+}
+
+/**
+ * Overrides hook_cron
+ */
+function ge_search_cron() {
+  $queue = DrupalQueue::get('search_index');
+  $count = 1;
+  $max_val = variable_get('node_search_index_cron', 50);
+  while($item = queue_search_claimItem('search_index')) {
+    $count++;
+    $queue->deleteItem($item);
+    if($count > $max_val) {
+      break;
+    }
+  }
+
+  $delete_counter = 1;
+  $delete_queue = DrupalQueue::get('search_delete_index');
+  while($item = queue_search_claimItem('search_delete_index')) {
+    $delete_counter++;
+    $delete_queue->deleteItem($item);
+    if($delete_counter > $max_val) {
+      break;
+    }
+  }
+}
+
+/**
+ * Overrides hook_workbench_moderation_transition
+ */
+function ge_search_workbench_moderation_transition($node, $previous_state, $new_state) {
+  if($new_state == 'published') {
+    $queue = DrupalQueue::get('search_index');
+    $queue->createItem($node->nid);
+  }
+  elseif($new_state == 'archive') {
+    $queue = DrupalQueue::get('search_delete_index');
+    if($node->type == 'section')
+      $queue->createItem($node->nid . '-section');
+    else
+      $queue->createItem($node->nid);
+  }
+  elseif($node->workbench_moderation['current']->unpublishing) {
+    $queue = DrupalQueue::get('search_delete_index');
+    if($node->type == 'section')
+      $queue->createItem($node->nid . '-section');
+    else
+      $queue->createItem($node->nid);
+  }
+}
+
+/**
+ * Overrides hook_node_delete
+ */
+function ge_search_node_delete($node) {
+  $queue = DrupalQueue::get('search_delete_index');
+  if($node->type == 'section')
+    $queue->createItem($node->nid . '-section');
+  else
+    $queue->createItem($node->nid);
+}
+
+/**
+ * Implements hook_cronapi
+ */
+function ge_search_cronapi($op, $function = NULL) {
+  switch($op) {
+  case 'list':
+    return array(
+      'ge_search_delete_cron' => 'Node deletion cron',
+    );
+    break;
+  case 'execute':
+    switch($function) {
+      case 'ge_search_delete_cron':
+        ge_search_delete_cron_records();
+        break;
+    }
+    break;
+  }
+}
+
+function ge_search_delete_cron_records() {
+  $num_deleted = db_delete('ge_data_search')
+    ->isNotNull('expired')
+    ->condition('expired', REQUEST_TIME - 604800, '<')
+    ->execute();
+}

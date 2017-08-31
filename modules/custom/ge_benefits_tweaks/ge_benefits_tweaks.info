@@ -1,0 +1,5 @@
+name = GE benefits tweaks
+description = tweaks
+package = GE 
+core = 7.x
+

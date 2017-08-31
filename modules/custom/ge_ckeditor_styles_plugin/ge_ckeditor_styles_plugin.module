@@ -1,0 +1,36 @@
+<?php
+
+function ge_ckeditor_styles_plugin_ckeditor_plugin() {
+
+    return array(
+      'timestamp' => array(
+        'name' => 'timestamp',
+        'desc' => t('Timestamp plugin'),
+        'path' => drupal_get_path('module', 'ge_ckeditor_styles_plugin') . '/plugins/timestamp/',
+        'buttons' => array(
+         'timestamp' => array(
+         'icon' => 'icons/timestamp.png',
+         'label' => 'Time Stamp',
+         )
+         ),
+      )
+    );
+    /*
+      return array(
+      'timestamp' => array(
+      // Name of the plugin used to write it.
+      'name' => 'timestamp',
+      // Description of the plugin - it would be displayed in the plugins management section of profile settings.
+      'desc' => t('Add custom styles to the CKEditor'),
+      // The full path to the CKEditor plugins directory, with the trailing slash.
+      'path' => drupal_get_path('module', 'ge_ckeditor_styles_plugin') . '/plugin/',
+      'buttons' => array(
+      'timestamp' => array(
+      'icon' => 'icons/timestamp.png',
+      'label' => 'Time Stamp',
+      )
+      )
+      )
+      );
+     */
+}

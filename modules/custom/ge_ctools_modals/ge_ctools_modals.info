@@ -1,0 +1,6 @@
+name = GE modals
+description = GE modals
+package = GE 
+core = 7.x
+dependencies[] = ctools
+version = "7.x"

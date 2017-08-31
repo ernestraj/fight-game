@@ -1,0 +1,8 @@
+name = RSO Login
+description = Authenticates with RSO
+package = Other
+core = 7.x
+dependencies[] = user
+
+configure = admin/config/rsoform
+

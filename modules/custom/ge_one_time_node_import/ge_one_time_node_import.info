@@ -1,0 +1,11 @@
+name = GE One Time Node Import
+description = Import all nodes from other sources into the DB
+core = 7.x
+
+files[] = ge_one_time_node_import.module
+
+; Information added by drupal.org packaging script on 2011-06-20
+version = "7.x-1.1"
+core = "7.x"
+datestamp = "1308565908"
+

@@ -1,0 +1,1270 @@
+<?php
+
+/**
+ * hook_menu
+ */
+function ge_dashboard_menu() {
+  $items['country-state-information/%'] = array(
+    'title' => 'Portal State Information',
+    'page callback' => 'country_state_information',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/traffic-reports'] = array(
+    'title' => 'Site Metrics',
+    'access arguments' => array('access content'),
+    'page callback' => 'reports_section',
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/traffic-reports/reports'] = array(
+    'title' => 'Sitemetrics',
+    'page callback' => 'reports_section',
+    'access arguments' => array('access content'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -50,
+  );
+  $items['admin/traffic-reports/path_reports'] = array(
+    'title' => 'Path details',
+    'page callback' => 'path_reports_section',
+    'access arguments' => array('access content'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 50,
+  );
+  $items['admin/traffic-reports/pie'] = array(
+    'title' => 'Pie chart',
+    'page callback' => 'ge_site_metrics_page_views',
+    'access arguments' => array('access content'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 51,
+  );
+  $items['admin/all-countries'] = array(
+    'title' => 'Portals',
+    'page callback' => 'ge_total_system_countries',
+    'access arguments' => array('access content'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/all-user-countries'] = array(
+    'title' => 'Portals',
+    'page callback' => 'ge_total_user_countries',
+    'access arguments' => array('access content'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  return $items;
+}
+
+/**
+ * This function will return all countries,
+ * with total count of published and draft
+ */
+function ge_total_system_countries() {
+  $vocab_object = _get_vocabulary_by_name("Menu");
+  $vid = $vocab_object->vid;
+  $tree = taxonomy_get_tree($vid);
+  foreach ($tree as $item) {
+    if ($item->depth == 0) {
+      $term = taxonomy_get_term_by_name($item->name, 'country');
+	   // Added code for show country names
+	   $current_term = current($term); 
+	   $term_load = taxonomy_term_load($current_term->tid);
+	   $country_name = isset($term_load->field_country_name[LANGUAGE_NONE][0]['value']) ? $term_load->field_country_name[LANGUAGE_NONE][0]['value'] : $term_load->name;		
+   
+      $rows[] = array(
+        array('data' => $item->name),
+        array('data' => $country_name),
+        array('data' => _get_state_information(key($term), 'published')),
+        array('data' => _get_state_information(key($term), 'draft'))
+      );
+    }
+  }
+  $headers = array('Portal Code', 'Portal Name', 'Published', 'Draft');
+  $output = theme('table', array('header' => $headers, 'rows' => $rows, 'attributes' => array('id' => 'all-country')));
+  return $output;
+}
+
+/**
+ * function will return total number of user
+ * countries and total count of published and
+ * draft nodes
+ */
+function ge_total_user_countries() {
+  $items = user_countries();
+  foreach ($items as $item) {
+		$term = taxonomy_term_load($item['tid']);
+		// Added code for show country names
+	    $country_name = isset($term->field_country_name[LANGUAGE_NONE][0]['value']) ? $term->field_country_name[LANGUAGE_NONE][0]['value'] : $term->name;		
+    $rows[] = array(
+      array('data' => $term->name),
+      array('data' => $country_name),
+      array('data' => _get_state_information($term->tid, 'published')),
+      array('data' => _get_state_information($term->tid, 'draft'))
+    );
+  }
+  $headers = array('Portal Code', 'Portal Name', 'Published', 'Draft');
+  $output = theme('table', array('header' => $headers, 'rows' => $rows, 'attributes' => array('id' => 'all-user-country')));
+  return $output;
+}
+
+function _get_state_information($country_id, $state) {
+  if ($state == "published") {
+    $result = db_query('SELECT DISTINCT n.nid, c.field_country_tid
+               FROM benifits_node_revision nr
+                LEFT JOIN benifits_node n ON n.vid = nr.vid
+                INNER JOIN benifits_field_data_field_country c ON c.entity_id = n.nid AND c.deleted = 0
+                WHERE c.entity_type = :entity_type
+                AND c.field_country_tid
+                IN ( :terms )
+                AND (n.nid = n.tnid OR n.tnid =0)
+                AND n.status = 1
+                AND n.type <> :type', array(':terms' => $country_id, ':type' => "project", ':entity_type' => "node"))
+        ->rowCount();
+  }
+  else {
+    $result = db_query('SELECT DISTINCT n.nid, wh.state, c.field_country_tid
+                FROM benifits_node_revision nr
+                LEFT JOIN benifits_node n ON n.vid = nr.vid
+                INNER JOIN benifits_workbench_moderation_node_history wh ON wh.nid = nr.nid AND wh.is_current = 1 AND wh.state =  :state
+                INNER JOIN benifits_field_data_field_country c ON c.entity_id = n.nid AND c.deleted = 0
+                WHERE c.entity_type = :entity_type
+                AND c.field_country_tid
+                IN ( :terms )
+                AND (n.nid = n.tnid OR n.tnid =0)
+                AND n.type <> :type', array(':state' => $state, ':terms' => $country_id, ':type' => "project", ':entity_type' => "node"))
+        ->rowCount();
+  }
+  return $result;
+}
+
+function path_reports_section() {
+  $output = NULL;
+  $cache_key = 'monthly';
+  $interval = '-31 days';
+  if (!empty($_GET['interval'])) {
+    $cache_key = $_GET['interval'];
+    if ($_GET['interval'] == 'weekly')
+      $interval = '-7days';
+    elseif ($_GET['interval'] == 'yearly')
+      $interval = '-365 days';
+  }
+  $sessioned_country = taxonomy_term_load($_SESSION['country']);
+  $portal_site = $sessioned_country->field_portal_site['und'][0]['value'];
+  $hrview_key = '';
+  if ($sessioned_country->name === 'HVW') {
+    $form = drupal_render(drupal_get_form('ge_dashboard_hrview_form'));
+    $form = '<div id="portal-site">' . $form . '</div>';
+    $portal_site = $_SESSION['portal_site'];
+    $hrview_key = $portal_site;
+  }
+ 
+
+  if ($cached = cache_get('ga_section_' . $cache_key . '_' . $_SESSION['country'] . $hrview_key, 'cache')) {
+    $output = $cached->data;
+  }
+
+  if (empty($output)) {
+    $output=$form;
+    $data = array();
+    $dates = array();
+    $sessioned_country = taxonomy_term_load($_SESSION['country']);
+    $filter = 'ga:pagePathLevel1=~[(]+[[:digit:]]+[)]+[(]+[[:word:]]+[)];ga:customVarValue1==' . $portal_site;
+    $params = array(
+      'metrics' => array('ga:pageviews'),
+      'dimensions' => array('ga:pagePathLevel1'),
+      'segment' => 'gaid::-1',
+      'sort' => '-ga:pageviews',
+      'start_date' => strtotime($interval),
+      'end_date' => strtotime('-1 day'),
+      'filters' => $filter,
+    );
+    $feed = google_analytics_api_report_data($params);
+    if ($feed->error) {
+      return FALSE;
+    }
+    $i = 0;
+    foreach ($feed->results->rows  as $row) {
+      $string = preg_replace("/[^0-9]/", "", $row['pagePathLevel1']);
+      $row1[] = array(
+        array('data' => $string),
+        array('data' => $row['pagePathLevel1']),
+        array('data' => $row['pageviews']),
+      );
+    }
+    $row1 = array_reverse($row1);
+    $headers = array('nid', 'Path', 'views');
+    $output.= theme('table', array('header' => $headers, 'rows' => $row1, 'attributes' => array('id' => 'role-delegation-table')));
+    cache_set('ga_section_' . $cache_key . '_' . $_SESSION['country'] . $hrview_key, $output, 'cache', 60 * 60 * 24);
+  }
+  
+  return $output;
+}
+
+function _ga_term_nid_array($interval_period = NULL) {
+  $data = array();
+  $dates = array();
+  $result_array = array();
+  $sessioned_country = taxonomy_term_load($_SESSION['country']);
+  $portal_site = $sessioned_country->field_portal_site['und'][0]['value'];
+  if ($sessioned_country->name === 'HVW') {
+    $portal_site = $_SESSION['portal_site'];
+  }
+  if (empty($portal_site))
+    return NULL;
+  else {
+    if (!empty($interval_period)) {
+      if ($interval_period == 'weekly')
+        $interval = '-7days';
+      elseif ($interval_period == 'yearly')
+        $interval = '-365 days';
+      else
+        $interval = '-31 days';
+    }
+    $filter = 'ga:pagePathLevel1=~[(]+[[:digit:]]+[)]+[(]+[[:word:]]+[)];ga:customVarValue1==' . $portal_site;
+    $params = array(
+      'metrics' => array('ga:pageviews'),
+      'dimensions' => array('ga:pagePathLevel1'),
+      'segment' => 'gaid::-1',
+      'sort' => '-ga:pageviews',
+      'start_date' => strtotime($interval),
+      'end_date' => strtotime('-1 day'),
+      'filters' => $filter,
+    );
+    $feed = google_analytics_api_report_data($params);
+    if ($feed->error) {
+      return FALSE;
+    }
+    $i = 0;
+    $nid_array = array();
+    foreach ($feed->results->rows  as $row) {
+      $string = preg_replace("/[^0-9]/", "", $row['pagePathLevel1']);
+      $result = db_select('field_data_field_menu', 'menu')
+          ->fields('menu', array('field_menu_tid'))
+          ->condition('entity_id', $string, '=')
+          ->execute()
+          ->fetchAll();
+
+      if (array_key_exists($result[0]->field_menu_tid, $result_array)) {
+        $result_array[$result[0]->field_menu_tid] = $result_array[$result[0]->field_menu_tid] + $row['pageviews'];
+      }
+      else {
+        $result_array[$result[0]->field_menu_tid] = $row['pageviews'];
+      }
+    }
+
+    return $result_array;
+  }
+}
+
+/**
+ * Call back function for reports section
+ */
+function reports_section() {
+  $output = NULL;
+  $cache_key = 'monthly';
+  if (!empty($_GET['interval']))
+    $cache_key = $_GET['interval'];
+
+  $sessioned_country = taxonomy_term_load($_SESSION['country']);
+  $portal_site = $sessioned_country->field_portal_site['und'][0]['value'];
+  $hrview_key = '';
+  if ($sessioned_country->name === 'HVW') {
+    $portal_site = $_SESSION['portal_site'];
+    $hrview_key = $_SESSION['portal_site'];
+     $form = drupal_render(drupal_get_form('ge_dashboard_hrview_form'));
+    $form = '<div id="portal-site">' . $form . '</div>';
+  }
+  if ($cached = cache_get('ga_reports_' . $cache_key . '_' . $_SESSION['country'] . $hrview_key, 'cache')) {
+    $output = $cached->data;
+  }
+  if (empty($output)) {
+    $output.=$form;
+    $result_array = _ga_term_nid_array($cache_key);
+    $vocab_object = _get_vocabulary_by_name("Menu");
+    $vid = $vocab_object->vid;
+    $tree = taxonomy_get_tree($vid);
+    foreach ($tree as $item) {
+      $options[$item->tid] = $item->depth;
+    }
+    foreach ($result_array as $key => $items) {
+      $term = taxonomy_term_load($key);
+      if (!empty($term->name)) {
+        $row1[] = array(
+          array('data' => '<span class = "weight-' . $weight_array[$key] . '">' . str_repeat('-', $options[$key]) . $term->name . '</span>'),
+          array('data' => $items),
+        );
+      }
+    }
+    //$output = drupal_render(drupal_get_form('ge_dashboard_interval_form'));
+    $row1 = array_reverse($row1);
+    $headers = array('Section', 'Views');
+    $output.= theme('table', array('header' => $headers, 'rows' => $row1, 'attributes' => array('id' => 'reports-section-wise')));
+    cache_set('ga_reports_' . $cache_key . '_' . $_SESSION['country'] . $hrview_key, $output, 'cache', 60 * 60 * 24);
+  }
+  return $output;
+}
+
+/**
+ * site metrics block for pageviews will be
+ * displayed on dashboard.
+ */
+function ge_site_metrics_page_views($interval_period = NULL) {
+  $sessioned_country = taxonomy_term_load($_SESSION['country']);
+  $portal_site = $sessioned_country->field_portal_site['und'][0]['value'];
+  $hrview_key = '';
+  if ($sessioned_country->name === 'HVW') {
+    $portal_site = $_SESSION['portal_site'];
+    $hrview_key = $_SESSION['portal_site'];
+  }
+ 
+  $build = NULL;
+  if (!empty($_GET['interval']))
+    $interval_period = $_GET['interval'];
+  else
+    $interval_period = 'monthly';
+
+  if ($cached = cache_get('ga_site_' . $interval_period . '_' . $_SESSION['country'] . $hrview_key, 'cache')) {
+    $build = $cached->data;
+  }
+
+  if (empty($build)) {
+    $result_array = _ga_term_nid_array($interval_period);
+    if (is_null($result_array))
+      return '<div id = "empty-data"><img src = "' . base_path() . path_to_theme() . '/images/coming-soon-img.png"/></div>';
+    elseif (array_sum($result_array) == 0)
+      return '<div id = "empty-data"><img src = "' . base_path() . path_to_theme() . '/images/coming-soon.png"/></div>';
+
+    $vocab_object = _get_vocabulary_by_name("Menu");
+    $vid = $vocab_object->vid;
+    $tree = taxonomy_get_tree($vid);
+    foreach ($tree as $item) {
+      if ($item->depth == 1) {
+        $options[$item->tid] = $item->depth;
+      }
+    }
+
+    foreach ($options as $key => $items) {
+      $term_par = taxonomy_get_parents($key);
+      if ($term_par[key($term_par)]->name == taxonomy_term_load($_SESSION['country'])->name) {
+        $term = taxonomy_term_load($key);
+        $vocab_object = _get_vocabulary_by_name("Menu");
+        $vid = $vocab_object->vid;
+        $children = taxonomy_get_children($key, $vid);
+        $counter = $result_array[$key];
+        if (isset($children)) {
+          foreach ($children as $child) {
+            $counter += $result_array[$child->tid];
+          }
+        }
+        $pages[] = array(
+          'sections' => str_replace('&', 'and', $term->name),
+          'page-views' => $counter,
+        );
+      }
+    }
+    $data = array($pages);
+
+    $options_pie = array(
+      'title' => 'Site Metrics',
+      'fields' => array(
+        'page-views' => array(
+          'label' => t('Page Views'),
+          'enabled' => TRUE,
+        ),
+      ),
+      'xAxis' => array(
+        'labelField' => 'sections',
+      ),
+      'data' => $pages,
+      'type' => 'pie',
+      'plotOptions' => array(
+        'pie' => array(
+          'dataLabels' => array(
+            'format' => '{<b>point.name</b>}: {point.percentage:.1f} %',
+          ),
+        ),
+      ),
+    );
+
+
+    $build['pie'] = array(
+      '#theme' => 'visualization',
+      '#options' => $options_pie,
+    );
+    cache_set('ga_site_' . $interval_period . '_' . $_SESSION['country'] . $hrview_key, $build, 'cache', 60 * 60 * 24);
+  }
+  return $build;
+}
+
+/**
+ * function will return form to change interval of
+ * reports.
+ */
+function ge_dashboard_interval_form() {
+  $form = array();
+
+  $form['interval_select'] = array(
+    '#type' => 'select',
+    '#title' => t('Select Interval'),
+    '#options' => array(
+      'weekly' => t('Weekly'),
+      'monthly' => t('Monthly'),
+      'yearly' => t('Yearly'),
+    ),
+    '#default' => $form_state['values']['interval_select'],
+    '#description' => t('Please select interval on the basis of which you want to see traffic information.')
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit',
+    '#submit' => array('change_pie_chart_interval'),
+  );
+
+  return $form;
+}
+
+/**
+ * Form submit handler for country switch block
+ */
+function change_pie_chart_interval($form, &$form_state) {
+  $explode = explode('?', ltrim($_SERVER['REQUEST_URI'], '/eeview'));
+  drupal_goto($explode[0], array('query' => array('interval' => $form_state['values']['interval_select'])));
+}
+
+/**
+ *
+ */
+function country_state_information($state) {
+  $row = array();
+  $items = user_countries();
+  if (empty($items))
+    return NULL;
+  foreach ($items as $item) {
+    $result = db_query('SELECT DISTINCT n.nid, wh.state, c.field_country_tid
+                FROM benifits_node_revision nr
+                LEFT JOIN benifits_node n ON n.vid = nr.vid
+                INNER JOIN benifits_workbench_moderation_node_history wh ON wh.nid = nr.nid AND wh.is_current = 1 AND wh.state =  :state
+                INNER JOIN benifits_field_data_field_country c ON c.entity_id = n.nid AND c.deleted = 0
+                WHERE c.entity_type = :entity_type
+                AND c.field_country_tid
+                IN ( :terms )
+                AND (n.nid = n.tnid OR n.tnid =0)
+                AND n.type <> :type', array(':state' => $state, ':terms' => $item['tid'], ':type' => "project", ':entity_type' => "node"))
+        ->rowCount();
+
+    $term = taxonomy_term_load($item['tid']);
+	// Script for find show the country full names;
+	$country_name = isset($term->field_country_name[LANGUAGE_NONE][0]['value']) ? $term->field_country_name[LANGUAGE_NONE][0]['value'] : $term->name;
+    $link = l($country_name, 'content-states/' . $state . '/' . $item['tid']);
+    if ($result != 0) {
+      $row[] = array(
+        array('data' => $link),
+        array('data' => $result),
+      );
+    }
+  }
+
+  $header = array('Portal', 'Count');
+  $output = theme('table', array('header' => $header, 'rows' => $row, 'attributes' => array('id' => 'country-state-table')));
+  return $output;
+}
+
+/**
+ * function will return form to change interval of
+ * reports.
+ */
+function ge_dashboard_hrview_form($form, &$form_state) {
+  $form = array();
+  $form['country_select'] = array(
+    '#type' => 'select',
+    '#options' => array(
+      'GE_MNGRVIEW' => t('Manager View'),
+      'GE_HRVIEW' => t('HR View'),
+      'GE_HRCNTRVIEW' => t('HR Contractor View'),
+      'GE_CONTRVIEW' => t('Contractor View'),
+      'GE_DFLTVIEW' => t('Default View'),
+    ),
+    '#default_value' => $_SESSION['portal_site'],
+    "#weight" => 1,
+    '#ajax' => array(
+      'callback' => 'change_country_portal_site',
+      'event' => 'change',
+    ),
+  );
+
+  if (isset($form_state['values']['country_select'])) {
+    $_SESSION['portal_site'] = $form_state['values']['country_select'];
+  }
+  return $form;
+}
+
+function change_country_portal_site($form, &$form_state) {
+  ctools_include('ajax');
+  //Reload page to change the dashboard specific to selected country
+  $commands[] = ctools_ajax_command_reload();
+  print ajax_render($commands);
+  drupal_exit();
+}
+
+/**
+ * Form submit handler for country switch block
+ */
+function ge_dashboard_hrview_form_submit($form, &$form_state) {
+  $portal_site = $form_state['values']['country_select'];
+  $_SESSION['portal_site'] = $portal_site;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function ge_dashboard_form_alter(&$form, &$form_state, $form_id) {
+  if (isset($form_state['view'])) {
+
+    $views_names = array('workbench_recent_content', 'workbench_edited', 'workbench_moderation');
+    $flag = in_array($form_state['view']->name, $views_names);
+    $display_items = array('needs_review_page', 'page_1', 'drafts_page');
+    $flag_page = in_array($form_state['view']->current_display, $display_items);
+    if ($form_id == 'views_exposed_form' && $flag && $flag_page) {
+      $workbench_tids = $form['access_id']['#options'];
+      $workbench_tids = array_keys($workbench_tids);
+      $tids = taxonomy_term_load_multiple($workbench_tids);
+      $vocab_object = _get_vocabulary_by_name("Menu");
+      $vid = $vocab_object->vid;
+      $tree = taxonomy_get_tree($vid, $parent = 0, $max_depth = NULL, $load_entities = FALSE);
+      foreach ($tree as $key => $terms) {
+        $depth[$terms->tid] = $terms->depth;
+      }
+      global $user;
+      $account = user_load($user->uid);
+      $items = field_get_items('user', $account, 'field_country');
+      $tax_name = array();
+      $tax_name['All'] = '-Any-';
+      if (!empty($items) && isset($form['field_country_tid'])) {
+        foreach ($items as $item) {
+          $term = taxonomy_term_load($item['tid']);
+          $tax_name[$term->tid] = $term->name;
+          $form['field_country_tid']['#default_value'] = $term->name;
+        }
+        $form['field_country_tid']['#options'] = $tax_name;
+      }
+      if (isset($form['field_country_tid'])) {
+        $country = $form_state['input']['field_country_tid'];
+      }
+      if (isset($form['field_country_tid_entityreference_filter'])) {
+        $country = $form_state['input']['field_country_tid_entityreference_filter'];
+      }
+      foreach ($tids as $key => $tid) {
+        if ($country == 'All') {
+          $depth_tid = $depth[$tid->tid];
+          $format = _format_tid($depth_tid);
+          $options[$tid->tid] = $format . $tid->name;
+        }
+        else {
+          if ($tid->field_menu_country['und'][0]['tid'] == $country) {
+            $depth_tid = $depth[$tid->tid];
+            $format = _format_tid($depth_tid);
+            $options[$tid->tid] = $format . $tid->name;
+          }
+        }
+      }
+      $form['access_id']['#options'] = $options;
+      $access_id = $form_state['input']['access_id'][0];
+      $access_tax = taxonomy_term_load($access_id);
+      $section_country = $access_tax->field_menu_country['und'][0]['tid'];
+      if ($section_country != $country) {
+        $form_state['input']['access_id'] = array();
+      }
+    }
+  }
+}
+
+function custom_dashboard_submit($form, &$form_state) {
+  $form_state['rebuild'] = TRUE;
+}
+
+function _format_tid($depth) {
+  switch ($depth) {
+    case '4':
+      return '---';
+      break;
+    case '3':
+      return '--';
+      break;
+    case '2':
+      return '-';
+      break;
+    default:
+      return '';
+  }
+}
+
+/**
+ * This function will return a vocabulary object which matches the
+ * given name. Will return null if no such vocabulary exists.
+ *
+ * @param String $vocabulary_name
+ *   This is the name of the section which is required
+ * @return Object
+ *   This is the vocabulary object with the name
+ *   or null if no such vocabulary exists
+ */
+function _get_vocabulary_by_name($vocabulary_name) {
+  $vocabs = taxonomy_get_vocabularies(NULL);
+  foreach ($vocabs as $vocab_object) {
+    if ($vocab_object->name == $vocabulary_name) {
+      return $vocab_object;
+    }
+  }
+  return NULL;
+}
+
+/**
+ * Overrides hook_block_info
+ */
+function ge_dashboard_block_info() {
+  $blocks = array();
+  $blocks['total_counts'] = array(
+    'info' => t('Dashboard total counts block'),
+  );
+  $blocks['used_roles'] = array(
+    'info' => t('Total used roles per country'),
+  );
+  $blocks['role_delegation'] = array(
+    'info' => t('Role Delegation'),
+  );
+  $blocks['not_used_roles'] = array(
+    'info' => t('Total not used roles per country'),
+  );
+  $blocks['real_name_block'] = array(
+    'info' => t('Real name'),
+  );
+  $blocks['environment_indicator'] = array(
+    'info' => t('Environment indicator block'),
+  );
+  $blocks['ge_dashboard_country_switch'] = array(
+    'info' => t('Country switch block for every page'),
+  );
+  $blocks['ge_site_metrics'] = array(
+    'info' => t('Site metrics block for dashboard'),
+  );
+  $blocks['ge_interval_change'] = array(
+    'info' => t('Change reports interval block'),
+  );
+  $blocks['project_assignment_to_node'] = array(
+    'info' => t('Project Assignment to Node'),
+  );
+  $blocks['custom_quick_links'] = array(
+    'info' => t('Custom quick links'),
+  );
+  return $blocks;
+}
+
+/**
+ * Override hook_permission
+ */
+function ge_dashboard_permission() {
+  return array(
+    'view site reports' => array(
+      'title' => t('View Full Reports'),
+      'description' => t('Allow role to view full site wide Google Analytics reports'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function ge_dashboard_block_view($delta = '') {
+  $block = array();
+
+  switch ($delta) {
+    case 'total_counts':
+      global $user;
+      $block['content'] = theme('total_count', array('user' => $user));
+      ;
+      break;
+
+    case 'ge_site_metrics':
+      $block['subject'] = _get_subject();
+      $block['content'] = ge_site_metrics_page_views();
+      break;
+
+    case 'role_delegation':
+      global $user;
+      $country_owner = FALSE;
+      $super_user = FALSE;
+      $workbench_access_allowed_tids = workbench_access_get_user_tree($user);    
+      foreach($workbench_access_allowed_tids as $tid) {
+        // Check to see if user has access on country taxonomy at depth level "1"
+        if($tid['depth'] == 1) {
+          $country_owner = TRUE;
+          break;
+        }
+      }
+      
+      $super_user = in_array('super_user', array_values($user->roles));
+      
+      
+      //Only allow this block to be displayed on User profile page and also if user is either country owner or super_user role
+      if((arg(0) == 'user' && is_numeric(arg(1)) && !arg(2) && $user->uid == arg(1)) && ($country_owner || $super_user)){
+        $block['content'] = drupal_get_form('ge_role_delegation_form');
+      }
+      break;
+
+    case 'used_roles':
+      $block['subject'] = t('Roles');
+      $block['content'] = ge_dashboard_used_roles();
+      break;
+
+    case 'environment_indicator':
+      $block['subject'] = t('Environment Indicator');
+      $block['content'] = ge_dashboard_environment_indicator();
+      break;
+
+    case 'not_used_roles':
+      $block['subject'] = t('Not used Roles');
+      $block['content'] = '<div id="role-main"><div class="role-num">' . total_unused_service_roles() . '</div><div class="total">Total Number of Roles Not in Use</div><span class = "list">' . l('list', 'roles-not-used') . '</div>';
+      break;
+
+    case 'real_name_block':
+      $block['subject'] = t('Real name');
+      $block['content'] = _get_real_name();
+      break;
+
+    case 'ge_dashboard_country_switch':
+      $block['subject'] = t('Country on every page');
+      $block['content'] = drupal_get_form('ge_dashboard_change_country_form');
+      break;
+
+    case 'ge_interval_change':
+      $block['subject'] = t('Interval change block');
+      $block['conent'] = drupal_render(drupal_get_form('ge_dashboard_interval_form'));
+      break;
+	case 'custom_quick_links':
+      $block['subject'] = '';
+      $block['content'] = custom_quick_links_block();
+      break;  
+
+    case 'project_assignment_to_node':
+      $block['subject'] = t('Project Assignment');
+      $block['content'] = drupal_get_form('ge_dashboard_project_assignment_form');
+  }
+
+  return $block;
+}
+
+function _get_subject() {
+  $form = '';
+  $term = taxonomy_term_load($_SESSION['country']);
+  if ($term->name == 'HVW') {
+    $form = drupal_render(drupal_get_form('ge_dashboard_hrview_form'));
+    $form = '<div id="portal-site">' . $form . '</div>';
+  }
+  if (user_access('view site reports'))
+    $subject =  l('View Reports', 'admin/traffic-reports').$form ;
+  else
+    $subject = 'Site Metrics' . $form;
+
+  return $subject;
+}
+
+/* Project assignment form */
+
+function ge_dashboard_project_assignment_form($form, &$form_state) {
+  $options = _get_projects_array();
+  unset($options[0]);
+  $form = array(
+    'project' => array(
+      '#type' => 'select',
+      '#options' => $options,
+      '#required' => TRUE,
+    ),
+    'submit' => array(
+      '#type' => 'submit',
+      '#value' => t('Submit')
+    ),
+  );
+  return $form;
+}
+
+/* * Submit function for project name * */
+
+function ge_dashboard_project_assignment_form_submit($form, &$form_state) {
+  $node = menu_get_object();
+  $project_node = node_load($form_state['values']['project']);
+  if (!empty($node) && !empty($project_node)) {
+    if (module_exists('workbench_moderation')) {
+      $node = workbench_moderation_node_current_load($node);
+    }
+  }
+  $component_name = $settings['change_project'];
+  try {
+    $result = rules_invoke_component('rules_change_project_name', $node, $project_node);
+  }
+  catch (Exception $e) {
+    watchdog_exception('rules', $e);
+    drupal_set_message('Some issue while assigning');
+  }
+}
+
+/**
+ *
+ */
+function ge_dashboard_environment_indicator() {
+  $output = $instance = '';
+  global $user;
+  if (strpos(variable_get('ge_dev_url'), $_SERVER['HTTP_HOST']) !== false) {
+    $instance .= 'Development instance';
+  }
+  elseif (strpos(variable_get('ge_stage_url'), $_SERVER['HTTP_HOST']) !== false) {
+    $instance .= 'Stage instance';
+  }
+  elseif (strpos(variable_get('ge_prod_url'), $_SERVER['HTTP_HOST']) !== false) {
+    $output .= 'Production instance';
+  }
+  else {
+    $instance .= 'Sandbox instance';
+  }
+  $output .= '<span class = "label"> Server </span>';
+  $output .= '<span>';
+  $output .= $instance;
+  $output .= '</span>';
+  $output .= '<br/>';
+  $output .= '<span class = "label"> Role </span>';
+  $output .= '<span>';
+  $output .= end($user->roles);
+  $output .= '</span>';
+
+  return $output;
+}
+
+/**
+ * Implements hook_form().
+ *
+ * declaring form
+ */
+function ge_dashboard_change_country_form($form, &$form_state) {
+  global $user;
+  $account = user_load($user->uid);
+  $items = field_get_items('user', $account, 'field_country');
+  $tax_name = array();
+  if (!empty($items)) {
+    foreach ($items as $item) {
+      $term = taxonomy_term_load($item['tid']);
+      $tax_name[$term->tid] = $term->name;
+    }
+  }
+  $tid = $_SESSION['country'];
+  if (!empty($tax_name)) {
+    $form = array(
+      'country' => array(
+        '#type' => 'select',
+        '#options' => $tax_name,
+        '#default_value' => $tid,
+      ),
+      'reset' => array(
+        '#type' => 'submit',
+        '#value' => t('Submit')
+      ),
+    );
+  }
+  else {
+    $form = array(
+      'message' => array(
+        '#markup' => 'No country in your scope',
+      ),
+    );
+  }
+  return $form;
+}
+
+/**
+ * Implements hook_form_submit().
+ *
+ * declaring form_submit
+ */
+function ge_dashboard_change_country_form_submit($form, &$form_state) {
+  global $user;
+  $uid = $user->uid;
+  $country = $form_state['values']['country'];
+  if (!empty($country)) {
+    $_SESSION['country'] = $country;
+  }
+  else
+    drupal_goto('admin/workbench');
+}
+
+function ge_dashboard_used_roles() {
+  $output = "";
+
+  if ($cached = cache_get('cache_total_used_roles', 'cache'))
+    $output = $cache->data;
+
+  if (empty($output)) {
+    $output = '<div id="role-main">';
+    $output .= '<div class="used-roles">';
+    $output .= '<div class="role-nums-n">';
+    $output .= l(total_used_roles(), 'roles-used');
+    $output .= '</div>';
+    $output .= '<div class="total">Total Roles Used</div>';
+    $output .= '</div>';
+    $output .= '<div class = "not-used-roles"><div class="role-nums-n">';
+    $output .= l(total_unused_service_roles(), 'roles-not-used');
+    $output .= '</div>';
+    $output .= '<div class="total">Not used roles</div>';
+    $output .= '</<div>';
+    $output .= '</div>';
+    $output .= '<div class = "total-roles">';
+    $output .= '<div class="role-nums-n">';
+    $output .= l(total_used_roles() + total_unused_service_roles(), 'total-roles');
+    $output .= '</div>';
+    $output .= '<div class="total">Total Roles</div>';
+    $output .= '</div>';
+    $output .= '</div>';
+    cache_set('cache_total_used_roles', $output, 'cache');
+  }
+
+  return $output;
+}
+
+/**
+ *  cache block for not used roles
+ */
+function _get_real_name() {
+  global $user;
+  $output = '';
+   if ($_SERVER['HTTP_SM_USER']||$_SERVER['HTTP_GEORACLEHRID']||$_SERVER['HTTP_SMUSER']) {
+      if($_SERVER['HTTP_SM_USER']) {
+      $sm_username = $_SERVER['HTTP_SM_USER'];}
+      elseif($_SERVER['HTTP_GEORACLEHRID'])
+      { $sm_username = $_SERVER['HTTP_GEORACLEHRID'];}
+      elseif($_SERVER['HTTP_SMUSER'])
+      { $sm_username = $_SERVER['HTTP_SMUSER'];}
+  }
+  if (isset($user->name)) {
+    if ($user->name == $sm_username) {
+      $first_name = $_SERVER['HTTP_GIVENNAME'];
+      $last_name = $_SERVER['HTTP_SN'];
+      $output = "<div id='realname'><div id='username'><span>" . l($last_name.','.$first_name, 'user'). "</span></div><div id='logout'>" . l('logout', 'user/logout') . "</div></div>";
+    }
+    else {
+      $output = "<div id='realname'><div id='username'><span>" .  l($user->name, 'user') . "</span></div><div id='logout'>" . l('logout', 'user/logout') . "</div></div>";
+    }
+  }
+  return $output;
+}
+
+/**
+ * State wise information for 
+ * each country
+ */
+function country_node_state_information($state, $limit = 0) {
+  global $base_url;
+  $counter = 1;
+  $result_array = array();
+  $user_countries = user_countries();
+  foreach ($user_countries as $item) {
+    if ($state == "published") {
+      $result = db_query('SELECT DISTINCT n.nid, c.field_country_tid
+                FROM benifits_node_revision nr
+                LEFT JOIN benifits_node n ON n.vid = nr.vid
+                INNER JOIN benifits_field_data_field_country c ON c.entity_id = n.nid AND c.deleted = 0
+                WHERE c.entity_type = :entity_type
+                AND c.field_country_tid
+                IN ( :terms )
+                AND (n.nid = n.tnid OR n.tnid =0)
+                AND n.status = 1
+                AND n.type <> :type', array(':terms' => $item['tid'], ':type' => "project", ':entity_type' => "node"))
+          ->rowCount();
+    }
+    else {
+      $result = db_query('SELECT DISTINCT n.nid, wh.state, c.field_country_tid
+                FROM benifits_node_revision nr
+                LEFT JOIN benifits_node n ON n.vid = nr.vid
+                INNER JOIN benifits_workbench_moderation_node_history wh ON wh.nid = nr.nid AND wh.is_current = 1 AND wh.state =  :state
+                INNER JOIN benifits_field_data_field_country c ON c.entity_id = n.nid AND c.deleted = 0
+                WHERE c.entity_type = :entity_type
+                AND c.field_country_tid
+                IN ( :terms )
+                AND (n.nid = n.tnid OR n.tnid =0)
+                AND n.type <> :type', array(':state' => $state, ':terms' => $item['tid'], ':type' => "project", ':entity_type' => "node"))
+          ->rowCount();
+    }
+    if ($result != 0) {
+      $result_array[$item['tid']] = $result;
+    }
+    $country[$item['tid']] = $item['tid'];
+  }
+  $output = '<ul>';
+  $total_count = 0;
+  if (count($result_array) > 0) {
+    foreach ($result_array as $index => $item) {
+      $total_count += $item;
+      if (isset($country[$index]) && $counter <= $limit) {
+        $term = taxonomy_term_load($index);
+		// Show the Country full name
+		$country_name = isset($term->field_country_name[LANGUAGE_NONE][0]['value']) ? $term->field_country_name[LANGUAGE_NONE][0]['value'] : $term->name;
+        if ($state == "published")
+          $output .= '<li><span class = "country-name">' . l($country_name, 'published-content/' . $term->tid) . '</span><span class="country-number">' . $item . '</span></li>';
+        else
+          $output .= '<li><span class = "country-name">' . l($country_name, 'content-states/' . $state . '/' . $term->tid) . '</span><span class="country-number">' . $item . '</span></li>';
+        $counter++;
+      }
+    }
+  }
+  else {
+    $total_count = 0;
+    foreach ($country as $item) {
+      if ($counter <= $limit) {
+        $term = taxonomy_term_load($item);
+		// Show the Country full name
+		$country_name = isset($term->field_country_name[LANGUAGE_NONE][0]['value']) ? $term->field_country_name[LANGUAGE_NONE][0]['value'] : $term->name;
+        $output .= '<li><span class = "country-name">' . $country_name. '</span><span>' . 0 . '</span></li>';
+        $counter++;
+      }
+    }
+  }
+  $output .= '</ul>';
+  $link = l($total_count, 'content-states/' . $state);
+  $output_array = array(
+    'toal_count' => $link,
+    'html' => $output,
+  );
+  if (count($result_array) > 3)
+    $output_array['more_link'] = l('more', 'country-state-information/' . $state);
+
+  return $output_array;
+}
+
+function user_countries() {
+  global $user;
+  $account = user_load($user->uid);
+  $items = field_get_items('user', $account, 'field_country');
+  if (empty($items))
+    return NULL;
+  foreach ($items as $key => $item) {
+    if ($_SESSION['country'] == $item['tid']) {
+      $selected_country = $key;
+    }
+  }
+  unset($items[$selected_country]);
+  $selected_country_array[0] = array('tid' => $_SESSION['country']);
+  $country_array = $selected_country_array + $items;
+  return $country_array;
+}
+
+function total_user_countries() {
+  $count = 1;
+  $items = user_countries();
+  $output = '<span class="system-country-count">' . count($items) . '</span>';
+  $output .= '<ul>';
+  $term = taxonomy_term_load($_SESSION['country']);
+  // Get the country full name
+  $country_name = isset($term->field_country_name[LANGUAGE_NONE][0]['value']) ? $term->field_country_name[LANGUAGE_NONE][0]['value'] : $term->name;
+  $output .= '<li><b>' . $country_name. '</b></li>';
+  foreach ($items as $item) {
+    if ($item['tid'] != $_SESSION['country'] && $count <= 2) {
+      $term = taxonomy_term_load($item['tid']);
+	  // Get the country full name
+	  $country_name = isset($term->field_country_name[LANGUAGE_NONE][0]['value']) ? $term->field_country_name[LANGUAGE_NONE][0]['value'] : $term->name;
+      $output .= '<li>' . $country_name . '</li>';
+      $count++;
+    }
+  }
+
+  $output .= '</ul>';
+  return $output;
+}
+
+/**
+ * Will return total countries
+ */
+function total_system_countries() {
+  $menu_vocab = get_vocabulary_by_machinename('Menu');
+  $menu_vid = $menu_vocab->vid;
+  $menu_tree = taxonomy_get_tree($menu_vid);
+  foreach ($menu_tree as $term) {
+    if ($term->depth === 0) {
+	 /* Get the Country Full names */
+	 $terms =  taxonomy_get_term_by_name($term->name, 'country');
+	 $terms[key($terms)]->field_country_name[LANGUAGE_NONE][0]['value'];
+	 $country_full_name = isset($terms[key($terms)]->field_country_name[LANGUAGE_NONE][0]['value']) ? $terms[key($terms)]->field_country_name[LANGUAGE_NONE][0]['value'] : $term->name;
+	 /* End of code for get country full names */
+	 $countries[$term->tid] = $country_full_name;
+    }
+  } 
+  $selected_country = taxonomy_term_load($_SESSION['country']);
+  $key = array_search($selected_country->name, $countries);
+  unset($countries[$key]);
+  /* Added country full name */
+  $country_name = isset($selected_country->field_country_name[LANGUAGE_NONE][0]['value']) ? $selected_country->field_country_name[LANGUAGE_NONE][0]['value'] : $selected_country->name;
+  
+  $selected_country_array[$_SESSION['country']] = $country_name;
+  $country_array = $selected_country_array + $countries;
+  $countries_sliced = array_slice($country_array, 0, 3);
+  $output = '<span class="system-country-count">' . count($country_array) . '</span>';
+  $output .= '<ul>';
+  foreach ($countries_sliced as $key => $name) {
+    $output .= '<li>' . $name . '</li>';
+  }
+
+  $output .= '</ul>';
+  return $output;
+}
+
+/**
+ *
+ */
+function total_system_users() {
+  $query = db_select('users', 'u');
+  $query->fields('u', array('uid'));
+  $query->condition('status', 1, '=');
+  $users = $query->execute();
+  $total_users = $users->rowCount();
+
+  return $total_users;
+}
+
+/**
+ *
+ */
+function total_used_roles() {
+  $query = db_select('taxonomy_term_data', 'td');
+  $query->fields('td', array('name'));
+  $query->leftJoin('taxonomy_index', 'ti', 'ti.tid = td.tid');
+  $query->innerJoin('node', 'n', 'ti.nid = n.nid');
+  $query->innerJoin('field_data_field_self_service_roles', 'ssr', 'td.tid = ssr.field_self_service_roles_tid');
+  $query->innerJoin('field_data_field_role_country', 'rc', 'td.tid = rc.entity_id');
+  $query->condition('rc.entity_type', "taxonomy_term");
+  $query->condition('rc.deleted', '0');
+  $query->condition('rc.field_role_country_tid', $_SESSION['country']);
+  $result = $query->distinct()->execute();
+  return($result->rowCount());
+}
+
+/**
+ *
+ */
+function total_unused_service_roles() {
+
+  $query = db_select('taxonomy_term_data', 'td');
+  $query->fields('td', array('name'));
+  $query->rightJoin('field_data_field_role_country', 'rc', 'rc.entity_id = td.tid');
+  $query->condition('rc.field_role_country_tid', $_SESSION['country']);
+  $result = $query->execute()
+      ->rowCount();
+
+  $unused_roles = $result - total_used_roles();
+
+  return format_string('@output', array('@output' => $unused_roles));
+}
+
+/**
+ * Overrides hook_theme
+ */
+function ge_dashboard_theme() {
+  return array(
+    'total_count' => array(
+      'variables' => array('user' => NULL),
+    ),
+  );
+}
+
+/**
+ * Theme function for total count block
+ */
+function theme_total_count($variables) {
+  $output = '';
+  if ($cached = cache_get('cache_total_count', 'cache'))
+    $output = $cache->data;
+
+  if (empty($output)) {
+    global $base_url;
+    $states = workbench_moderation_states();
+    $states_reverse = array('draft', 'published');
+    $output .= '<ul>';
+    $output .= '<li class = "total-countries count">';
+    $output .= '<h3>' . t('All Portals') . '</h3>';
+    $output .= '<span>' . total_system_countries() . '</span><span class = "more-link">' . l('more', 'admin/all-countries') . '</span>';
+    $output .= '</li>';
+    foreach ($states_reverse as $item) {
+      $result = country_node_state_information($item, 3);
+      $output .= '<li class = "count-' . $item . ' count">';
+      $output .= '<h3>' . t('@state_name', array('@state_name' => ucfirst($item))) . '</h3>';
+      $output .= '<span class="total-published">' . $result['toal_count'] . '</span>';
+      $output .= $result['html'];
+      if (!empty($result['more_link'])) {
+        $output .= '<span class = "more-link">' . $result['more_link'] . '</span>';
+      }
+      $output .= '</li>';
+    }
+    $output .= '</ul>';
+
+    
+
+    cache_set('cache_total_count', $ouput, 'cache');
+  }
+
+  return $output;
+}
+
+/** * This function will return a vocabulary
+  object which matches the * given name. Will return null if no such vocabulary exists. * * @param String $vocabulary_name * This is the name of the section which is required * @return Object * This is the vocabulary object with the name * or null if no such
+  vocabulary exists */
+function get_vocabulary_by_machinename($vocabulary_name) {
+  $vocabs = taxonomy_get_vocabularies(NULL);
+  foreach ($vocabs as $vocab_object) {
+    if ($vocab_object->name == $vocabulary_name) {
+      return $vocab_object;
+    }
+  }
+  return NULL;
+}
+
+/**
+ *  Overrides hook_node_presave
+ */
+function ge_dashboard_node_presave($node) {
+  cache_clear_all('cache_total_used_roles', 'cache');
+  cache_clear_all('cache_total_count', 'cache');
+}
+
+/**
+ * Projects array for displaying in project dropdown
+ * in project page.
+ */
+function _get_projects_array() {
+  $open_term = taxonomy_get_term_by_name('open', 'project_status');
+  $open_term_id = key($open_term);
+  $projects_array = array();
+  if (!empty($open_term_id)) {
+    $query = db_select('node', 'n');
+    $query->join('field_data_field_project_status', 'status', 'n.nid=status.entity_id');
+    $query->fields('n', array('nid', 'title'));
+    $query->condition('n.type', 'project', '=');
+    $query->condition('status.field_project_status_tid', $open_term_id, '=');
+    $project = $query->execute();
+    $projects = $project->fetchAll();
+    $projects_array[0] = "Please Select";
+    foreach ($projects as $value) {
+      $projects_array[$value->nid] = $value->title;
+    }
+  }
+  return $projects_array;
+}
+/**
+	Function for show views quick links
+**/
+function custom_quick_links_block(){
+    $views = views_get_all_views();
+    $links = array();
+    foreach ($views as $view) {
+       if(isset($view->display['page']->display_options['path'])){
+           $title = isset($view->display['default']->display_options['title']) ? $view->display['default']->display_options['title'] : 'No Title';
+         $links[] =  array('title'=> $title, 'href'=>$view->display['page']->display_options['path']);
+       }
+    }
+    return theme('links', array(
+                'links' => $links,
+                'attributes' => array('class' => array('links', 'inline')))
+          );    
+}

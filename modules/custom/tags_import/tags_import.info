@@ -1,0 +1,4 @@
+name = Tags Import
+core = "7.x"
+description = Import all Search Tags
+project = "GE"

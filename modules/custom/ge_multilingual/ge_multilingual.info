@@ -1,0 +1,7 @@
+name = GE Multilingual
+description = GE Multilingual
+core = 7.x
+version = "7.x-2.0"
+core = "7.x"
+
+

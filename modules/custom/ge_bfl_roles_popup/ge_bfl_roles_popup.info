@@ -1,0 +1,6 @@
+name = GE BFL Roles Pop-up
+description = To convert Taxonomy Autocomplete widget into BFL/Roles pop-up
+core = 7.x
+package = GE
+dependencies[]=ctools
+dependencies[]=views

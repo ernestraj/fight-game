@@ -1,0 +1,147 @@
+/*
+To change this license header, choose License Headers in Project Properties.
+To change this template file, choose Tools | Templates
+and open the template in the editor.
+*/
+/* 
+    Created on : Mar 5, 2014, 10:22:36 AM
+    Author     : 502287860
+*/
+
+br{
+    font-size: 2em;
+}
+p{
+    padding: 0px 0px 10px 0px;
+}
+/*
+To change this license header, choose License Headers in Project Properties.
+To change this template file, choose Tools | Templates
+and open the template in the editor.
+*/
+/* 
+    Created on : Mar 13, 2014, 11:56:52 AM
+    Author     : 502287860
+*/
+
+.ge-element{
+    font-family: "ge-sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: #5C5F63;
+    -webkit-font-smoothing: antialiased;
+    font-smoothing: antialiased;
+}
+
+h1.ge-element, h3.ge-element, h4.ge-element {
+    margin: 12px 0;
+}
+.ge-element.sectionTitle{
+    font-size: 1.5em;
+}
+
+.ge-element.sub-sectionTitle{
+    font-size: 1.2em;
+}
+
+.ge-element.btn{
+    border-color: transparent;
+    font-family: "ge-sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: normal;
+    color: #005EB8;
+    padding: 4px 10px 4px 10px;
+    text-decoration: none;
+    font-weight: bold;
+    background-color: #F0F1F2;
+    -webkit-border-radius: 3px;
+    -moz-border-radius: 3px;
+    border-radius: 3px;
+    -webkit-transition: background-color .1s linear, border-color .1s linear, color .1s linear;
+    -moz-transition: background-color .1s linear, border-color .1s linear, color .1s linear;
+    -o-transition: background-color .1s linear, border-color .1s linear, color .1s linear;
+    transition: background-color .1s linear, border-color .1s linear, color .1s linear;
+    -webkit-font-smoothing: antialiased;
+    font-smoothing: antialiased;
+
+}
+.ge-element.btn.btn-link{
+    color: #005EB8;
+    background-color: transparent;
+    padding: 0px;
+    text-align: left;
+}
+.ge-element.btn.btn-link:active{
+    background-color: transparent;
+    background-image: none;
+}
+/*
+span.ge-element.arrow{
+    background-position: 101% 45%;
+    padding-right: 18px !important;
+    background-repeat: no-repeat;
+    background-image: url(images/arrow.jpg);
+}*/
+i.ge-element.arrow{
+	background-image: url("images/arrow.jpg");
+    background-position: 0 3px;
+    background-repeat: no-repeat;
+    height: 100%;
+    position: absolute;
+    width: 18px;
+}
+.ge-element.btn.btn-link.arrow{
+    margin-right: 18px;
+}
+.ge-element.timestamp{
+    color: lightgrey;
+}
+
+
+/********************************************************************************************************/
+
+
+i.ge-element.arrow{
+	background-image: url("images/arrow.jpg");
+    background-position: 0 3px;
+    background-repeat: no-repeat;
+    height: 100%;
+    position: absolute;
+    width: 18px;
+}
+
+
+h3.ge-element {
+    font-family: "ge-inspira", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: #26272B;
+    font-weight: normal;
+}
+
+h3.ge-element,
+h4.ge-element {
+    font-family: inherit;
+    font-weight: bold;
+    line-height: 24px;
+    color: #26272b;
+    text-rendering: optimizelegibility;
+}
+
+h3.ge-element {
+    font-size: 24.5px;
+}
+h4.ge-element {
+    font-size: 17.5px;
+}
+
+ul.ge-element,
+ol.ge-element {
+    padding: 0;
+    margin: 0 0 12px 25px;
+}
+ul ul.ge-element,
+ul ol.ge-element,
+ol ol.ge-element,
+ol ul.ge-element {
+    margin-bottom: 0;
+}
+li.ge-element {
+    line-height: 24px;
+}
+

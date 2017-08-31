@@ -1,0 +1,63 @@
+<?php
+/**
+ * Implements hook_rules_action_info(). 
+ */
+function ge_node_clone_rules_action_info() {
+  $actions = array(
+    'ge_clone_action_node_clone' => array(
+      'label' => t('Clone a node'),
+      'group' => t('Node'),
+      'parameter' => array(
+        'node' => array(
+          'type' => 'node',
+          'label' => t('Node to clone'),
+        ),
+      ),
+      'provides' => array(
+        'clone' => array(
+          'type' => 'node',
+          'label' => t('Cloned node'),
+        ),
+      ),
+    ),
+  );
+  return $actions;
+}
+
+/** function for cloning for translation set */
+function ge_clone_action_node_clone($node) {
+
+  if (is_object($node)) {
+    if ($node->tnid != 0) {
+      if ($node->nid != $node->tnid) {
+        $node = entity_load_single('node', $node->tnid);
+      }
+    }
+    include_once drupal_get_path('module', 'clone') . '/clone.pages.inc';
+    $source_nid = clone_node_save($node->nid);
+    $translations = translation_node_get_translations($node->nid);
+    if (is_array($translations)) {
+      foreach ($translations as $tnode) {
+        if ($tnode->nid !== $node->nid) {
+          $new_translation_nid = clone_node_save($tnode->nid);
+          $new_translation_node = entity_load_single('node', $new_translation_nid);
+          $new_translation_node->revision = 1;
+          $new_translation_node->tnid = $source_nid;
+          node_save($new_translation_node);
+        }
+      }
+    }
+    $source_node = entity_load_single('node', $source_nid);
+    if (count($translations) > 1) {
+      $source_node->tnid = $source_nid;
+    }
+    $source_node->revision = 1;
+    node_save($source_node);
+
+    $new_node = entity_load_single('node', $source_nid);
+    return array(
+      'clone' => $new_node,
+    );
+  }
+  return;
+}

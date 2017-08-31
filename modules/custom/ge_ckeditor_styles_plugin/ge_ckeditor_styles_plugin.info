@@ -1,0 +1,10 @@
+name = GE  CKEditor Plugin Styles
+description = Adds a custom plug in to add styles to on the CKEditor.
+core = 7.x
+dependencies[] = ckeditor
+files[] = ge_ckeditor_styles_plugin.module
+
+version = "7.x-1.0"
+core = "7.x"
+datestamp = "1308888999"
+
