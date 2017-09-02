@@ -1,9 +1,0 @@
-name = GE Node clone
-description = GE node clone
-package = GE 
-core = 7.x
-version = "7.x-2.0"
-core = "7.x"
-dependencies[] = clone
-
-

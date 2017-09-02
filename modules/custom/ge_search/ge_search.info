@@ -1,5 +1,0 @@
-name = GE Search
-package = "GE"
-core = "7.x"
-description = Module for populating search table with searchable content.
-dependencies[] = workbench_moderation

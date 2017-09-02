@@ -1,4 +1,0 @@
-name = GE admin forms
-description = This for admins to set the vocabulary terms in forms.
-core = 7.x
-version = "7.x-1.x-dev"

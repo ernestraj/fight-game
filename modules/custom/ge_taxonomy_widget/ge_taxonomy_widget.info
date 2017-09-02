@@ -1,6 +1,0 @@
-name = GE Taxonomy Widget
-description = It provides a field widget which will filter taxonomy terms.
-core = 7.x
-package = Custom
-dependencies[] = taxonomy
-dependencies[] = ge_ctools_modals

@@ -1,5 +1,0 @@
-name = GE private file
-description = This module is to allow peoplesoft portal to download the private files
-package = GE 
-core = 7.x
-

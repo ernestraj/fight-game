@@ -1,6 +1,0 @@
-928a929,933
->   // Prevent workbench moderation from deleting field collections on node_save()
->   // during workbench_moderation_store(), when $host_entity->revision == 0.
->   if (!empty($entity->workbench_moderation['updating_live_revision'])) {
->     return;
->   }
